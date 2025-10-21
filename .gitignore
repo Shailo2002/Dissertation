@@ -1,0 +1,34 @@
+# Jupyter Notebook Checkpoints
+.ipynb_checkpoints/
+
+# Python compiled files
+__pycache__/
+*.pyc
+
+# Environment files
+.conda/
+env/
+venv/
+*.egg-info/
+.env
+
+# Operating System specific files
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+*.log
+*.tmp
+temp/
+
+# Data files (if not intended for version control)
+# You might want to be more specific here, e.g.,
+# data/
+# *.csv
+# *.hdf5
+
+# Anaconda/Miniconda specific files (if you don't want to track environment.yml)
+# If you are managing your environment with environment.yml, you might want to keep it.
+# If not, you might want to ignore these:
+# conda-meta/
+# pkgs/
