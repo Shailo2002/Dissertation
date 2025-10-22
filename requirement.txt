@@ -2,3 +2,5 @@ ipykernel
 matplotlib
 numpy
 mt_metadata
+simpeg 
+empymod
