@@ -4,3 +4,6 @@ numpy
 mt_metadata
 simpeg 
 empymod
+cartopy
+shapely
+geopandas 

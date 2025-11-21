@@ -1,0 +1,1 @@
+https://akp-dev.biopama.org/geoserver/wfs?version=1.0.0&request=GetFeature&outputFormat=shape-zip&typeName=akp%3Abasins__greater_than_2km_
