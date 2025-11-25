@@ -23,6 +23,6 @@ Site,MeanSkew,Is1D_like
 "Otjiwarongo, Namibia, Africa",1.0647360832718187,True
 South Africa,1.3169712421454352,True
 "Kimberley, South Africa",1.756430316864726,True
-"Barotse Basin, Western Province, Zambia",2.5647077588117537,True
-"Southern Botswana, Africa",4.6307453534599246,True
-"Tzaneen, South Africa",7.107327017718656,True
+"Barotse Basin, Western Province, Zambia",2.5647077588117537,False
+"Southern Botswana, Africa",4.6307453534599246,False
+"Tzaneen, South Africa",7.107327017718656,False
