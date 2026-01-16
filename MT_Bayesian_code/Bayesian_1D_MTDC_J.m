@@ -1,0 +1,128 @@
+clc;    clear all;      close all;
+
+% Add Path of the Folders and all the subfolders having all the subroutines
+% restoredefaultpath
+subroutinefolder1 = 'MT_DC_function';
+addpath(genpath([pwd,'/',subroutinefolder1]));
+
+CData = GetDefaultParameters();
+
+folder_name = 'Test';  mkdir(folder_name);
+destination_folder = fullfile(pwd, folder_name);
+
+
+% MT_datafile = 'SAMTEX.kim422.2004_Zxy.dat';
+MT_datafile = 'MT_data_Z.dat';
+DC_datafile = ' .dat';
+CData.LogFile = 'LogFile.dat';
+
+% which data we nned to invert
+CData.inversion_method = 'MT';   % MT DC MT_DC
+CData.MT.datatype = 'Z';
+
+[model_m0, model_LF0, data_sigma] = initialise_chain(CData);
+
+CData = read_data(MT_datafile, DC_datafile, CData);
+
+fprintf('%s \n','MCMC Procedure Starts ');
+fid = fopen(CData.LogFile,'w');
+swapCount = [];
+
+for is = 1:CData.nsteps
+    for ic = 1:CData.nChains
+        % Pick LF0 and model0 after parallel tempering
+        model0 = model_m0{ic};  LF0 = model_LF0{ic}; noise = data_sigma{ic};
+
+        [Samples, model0, LF0, noise] =  bayesain_hier(model0, LF0,...
+             noise, CData, ic, is);
+
+        % update the models and likehood
+        model_m0{ic} = model0;  model_LF0{ic} = LF0; data_sigma{ic} = noise;
+
+        % Let us store the last results only, we will keep updating the
+        % results.
+        results_all(ic,is) = Samples;
+    end
+
+    status = save_chain(results_all, is, CData, swapCount, destination_folder);
+
+    % Begin parallel tempering we will flip the model and likelihood
+    if any(CData.temperature > 1)
+        [model_LF0, model_m0, data_sigma, swapCount] = swap_temperatures...
+            (model_LF0, model_m0, data_sigma, CData, is, swapCount);
+    end
+end
+fclose(fid);
+fprintf('%s \n','MCMC Procedure Ends ');
+
+function CData = GetDefaultParameters( )
+
+% CData.temperature = [ones(1,30) logspace(0, log10(10), 20)];
+% CData.temperature = [1 1 1 1.2 2.0 5];
+CData.temperature = [1 1];
+
+% number of chains we want to apply parallel tempering in one go.
+CData.nchain_for_PT = min(length(find(CData.temperature==1)),...
+    length(find(CData.temperature~=1)));
+
+CData.nChains = length(CData.temperature);
+%  The jump type between different temperatures:
+%  0, randomly choose a temperature;
+%  1, randomly choose a temperature between the two neighbours
+%  2, choose the nearest temperature
+CData.jumptype = 1;
+
+% log domain for z or not
+CData.MT.datatype = 'app_phase';
+CData.logdomain = true;
+CData.log_normal_noise = false;
+
+CData.scale = 1;   % scale to convert model to km, keep it as 1
+
+% Minimum and maximum value of nodes for creation of new layer
+if CData.logdomain == true
+    CData.min_z = log10(10);           CData.max_z = log10(350000);
+else
+    % linear domain
+    CData.min_z = 0;                   CData.max_z = 200;
+end 
+CData.minumum_layer_thickness = 1000;     % specify in mts;
+
+CData.proposal = [0.1 0.5 0.66 1];
+
+% No of steps and number of samples in each step
+CData.nsteps = 100;       CData.nsamples = 1000;
+
+CData.resmin = 1.0E-01;   CData.resmax = 1.0E+05;
+
+% updating birth rates for multiple chains
+CData.nChains_atT1 = length(find(CData.temperature==1));  % chains at T == 1
+CData.nChains_atoT = CData.nChains - CData.nChains_atT1;  % chains at T /= 1
+
+CData.sigma_rho = [0.2*ones(1,CData.nChains_atT1) linspace(0.2, 0.4, CData.nChains_atoT)];
+CData.sigma_rho_birth = [0.4*ones(1,CData.nChains_atT1) linspace(0.4, 0.6, CData.nChains_atoT)];
+CData.sigma_rho_delayed = CData.sigma_rho/4;
+
+% Position values range and deivations
+CData.sigma_loc_z = [2*ones(1,CData.nChains_atT1) linspace(2, 3, CData.nChains_atoT)];
+CData.sigma_loc_z_delayed = CData.sigma_loc_z/2;
+
+% Noise values range and deivations
+CData.sigma_Z = ([1 5]);
+CData.sigma_app_res = ([0.8 5]);
+CData.sigma_phase = ([0.8 5]);
+CData.sigma_noise = 0.01;
+
+
+% Kernel type; 0 for gaussian and 1 for prior;
+CData.kernel = 1;            CData.eps = 1.0E-09;
+
+% Minimum and the maximum number of nodes
+CData.minnodes = 2;         CData.maxnodes = 30;
+
+% ==================== No need to look further down ===================== %
+CData.min_res_log = log10(CData.resmin);
+CData.max_res_log = log10(CData.resmax);  % values on the log10 scale
+
+CData.rho = 'log10';       % logrho
+end
