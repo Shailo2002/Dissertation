@@ -1,0 +1,24 @@
+These directories contain the original model and data files for the publications "Probing the southern African lithosphere with magnetotellurics, Part I, model construction" and "Probing the southern African lithosphere with magnetotellurics, Part II, linking electrical conductivity, composition and tectonomagmatic evolution". The two codes used to generate these results are
+
+jif3D (Moorkamp et al. 2011) available via subversion at https://svn.code.sf.net/p/jif3d/jif3dsvn/trunk/jif3D  and
+ModEM (Kelbert et al. 2014) (https://sites.google.com/site/modularem/download)
+
+All scripts to produce plots are written in Python (Version 3) and require a working Python environment (e.g. Anaconda under Windows https://www.anaconda.com/). Two helper classes are contained in the files mtclass.py (for reading data files) and mtmodel.py (for reading models). These require the packages
+netcdf4, mtpy, rasterio, matplotlib, numpy, geopandas, cartopy and possibly a few others. If you get error messages related to missing packages, the typical solution is to call "conda install packagename" (Windows) or "pip3 install packagename".
+
+We include 3 main Python scripts:
+
+PlotHorizontalSlices.py plots horizontal slices through the inversion models similar to Figures 8-11 in part I. However, you get all slices from the surface to the bottom of the model domain. The output is a single PDF called HorSlices.pdf
+PlotMisfit.py produces 5 different PDF files. Each one shows comparisons between observed and predicted data for all sites used in each inversion.
+PlotGeoTiff.py produces horizontal slices through the models in GeoTiff format for use in GIS programs or Google Earth. The output files are large (total 1 GB per model), therefore it is currently set to only produce output for one model (jif3D with maximum data). This can be changed by using other filenames (see PlotHorizontalSlices.py).
+
+These scripts are also meant as a basis for other scripts for new analyses of these results. All material here is provided under the Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0) license (https://creativecommons.org/licenses/by-sa/4.0/).
+
+
+
+
+
+References
+
+Moorkamp, M., Heincke, B., Jegen, M., Roberts, A. W., & Hobbs, R. W. (2011). A framework for 3-D joint inversion of MT, gravity and seismic refraction data. Geophysical Journal International, 184(1), 477-493.
+Kelbert, A., Meqbel, N., Egbert, G. D., & Tandon, K. (2014). ModEM: A modular system for inversion of electromagnetic geophysical data. Computers & Geosciences, 66, 40-53.
