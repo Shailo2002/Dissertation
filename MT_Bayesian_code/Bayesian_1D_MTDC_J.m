@@ -8,10 +8,8 @@ addpath(genpath([pwd,'/',subroutinefolder1]));
 CData = GetDefaultParameters();
 
 folder_name = 'Test';  mkdir(folder_name);
-destination_folder = fullfile(pwd, folder_name);
+destination_folder = [pwd,'\',folder_name];
 
-
-% MT_datafile = 'SAMTEX.kim422.2004_Zxy.dat';
 MT_datafile = 'MT_data_Z.dat';
 DC_datafile = ' .dat';
 CData.LogFile = 'LogFile.dat';
@@ -70,10 +68,9 @@ CData.nChains = length(CData.temperature);
 %  0, randomly choose a temperature;
 %  1, randomly choose a temperature between the two neighbours
 %  2, choose the nearest temperature
-CData.jumptype = 1;
+CData.jumptype = 0;
 
 % log domain for z or not
-CData.MT.datatype = 'app_phase';
 CData.logdomain = true;
 CData.log_normal_noise = false;
 
@@ -91,7 +88,7 @@ CData.minumum_layer_thickness = 1000;     % specify in mts;
 CData.proposal = [0.1 0.5 0.66 1];
 
 % No of steps and number of samples in each step
-CData.nsteps = 100;       CData.nsamples = 1000;
+CData.nsteps = 20;       CData.nsamples = 1000;
 
 CData.resmin = 1.0E-01;   CData.resmax = 1.0E+05;
 

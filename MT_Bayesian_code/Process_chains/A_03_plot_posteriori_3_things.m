@@ -49,7 +49,7 @@ c = colorbar;
 c.Label.String = 'log10 (PDF)';
 
 subplot(1,3,2)
-kPDF = sum(S.kSamples, 2, 'omitnan')./(sum(sum(S.kSamples, 'omitnan'), 'omitnan') * S.dz);
+kPDF = nansum(S.kSamples,2)./(nansum(nansum(S.kSamples))*S.dz);
 kPrior = mean(kPDF);
 kPDF(1) = 0;  % To make the first interface as invalid as its always there
 plot(kPDF,S.zPlot(1:end-1),'linewidth',2)

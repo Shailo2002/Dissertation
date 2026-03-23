@@ -23,9 +23,9 @@ catch
 end
 
 nsteps = 20;          step_discard = floor(nsteps*5/10);
-chain_thin = 10;       nrms_limit = 20;
+chain_thin = 25;       nrms_limit = 20;
 % information for binning, make changes here
-S.zMin = 0; S.zMax = 350000;    S.dz = 2000;
+S.zMin = 0; S.zMax = 350000;    S.dz = 1000;
 S.rhoMin = -1;     S.rhoMax = 6;             S.drho = 0.1; % in log10(rho) (ohm-m)
 
 nsamples = (nsteps-step_discard)*CData.nChains_atT1*CData.nsamples/chain_thin;
