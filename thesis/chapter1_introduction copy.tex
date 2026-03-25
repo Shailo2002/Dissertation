@@ -1,0 +1,472 @@
+\chapter{Introduction}
+
+\section*{Background and Motivation}
+
+The study of the Earth's interior has long been one of the central pursuits of geophysics, driven by the desire to understand the composition, structure, thermal state, and dynamic processes that govern the evolution of our planet. Among the various geophysical methods available for probing the subsurface, electromagnetic (EM) techniques occupy a distinctive position owing to their sensitivity to the electrical properties of rocks and minerals. Electrical resistivity --- or equivalently, its reciprocal, electrical conductivity --- is a physical property that varies over several orders of magnitude in natural geological materials, from highly resistive crystalline basement rocks ($>10{,}000$ $\Omega$m) to highly conductive graphite-bearing shear zones, saline fluids, and partial melts ($<1$ $\Omega$m). This extraordinary dynamic range makes resistivity an exceptionally diagnostic parameter for characterizing subsurface geology.
+
+The magnetotelluric (MT) method is a passive electromagnetic geophysical technique that exploits naturally occurring time-varying electromagnetic fields to image the electrical resistivity distribution of the Earth's interior, from shallow depths of a few tens of metres to several hundreds of kilometres into the upper mantle and beyond. Unlike active-source methods that require the deployment of transmitters, the MT method relies on two ubiquitous natural sources of electromagnetic energy: (i) worldwide thunderstorm activity, which generates EM signals at frequencies above approximately 1 Hz (the so-called ``dead band'' notwithstanding), and (ii) the interaction between the solar wind and the Earth's magnetosphere, which produces micropulsations and geomagnetic variations at frequencies below approximately 1 Hz. Because electromagnetic fields attenuate exponentially as they propagate into a conducting medium, with the skin depth (penetration depth) increasing with the square root of the period, the MT method inherently provides frequency-dependent depth sounding capability. Short-period (high-frequency) signals probe the shallow subsurface, while long-period (low-frequency) signals penetrate to great depths, enabling the construction of resistivity-depth profiles that span the entire lithosphere.
+
+The physical basis of the MT method rests on the measurement of two orthogonal horizontal components of the electric field ($E_x$, $E_y$) and two orthogonal horizontal components of the magnetic field ($H_x$, $H_y$) at the Earth's surface, typically over a period of days to weeks depending on the target depth. From these time-series measurements, the complex-valued, frequency-dependent impedance tensor $\mathbf{Z}(\omega)$ is estimated, which encapsulates the transfer function relating the electric and magnetic fields. The impedance tensor contains information about the dimensionality and orientation of the subsurface conductivity structure, and from it, the standard MT response functions --- apparent resistivity and phase --- are derived as functions of period.
+
+Southern Africa represents one of the most geologically and geophysically significant regions on the planet for the study of continental lithosphere. The region encompasses some of the oldest and most stable continental fragments preserved on Earth, with a geological record extending from the Paleoarchean (older than 3.6 Ga) to the present day. The geological framework of southern Africa is dominated by two major Archean cratons --- the Kaapvaal Craton and the Zimbabwe Craton --- which stabilized between approximately 3.6 and 2.5 billion years ago and represent thick, cold, and mechanically strong lithospheric roots that have survived multiple episodes of tectonic activity. These two cratonic nuclei are separated and sutured by the Limpopo Mobile Belt, a high-grade metamorphic terrane that records one of the oldest continent--continent collision events on Earth, dating to approximately 2.7--2.0 Ga.
+
+Surrounding the Archean nuclei, a series of Proterozoic orogenic belts record successive episodes of crustal growth, continental collision, and rifting. The Paleoproterozoic (2.5--1.6 Ga) is represented by both shield terranes, such as the Rehoboth Province in central Namibia, and mobile belts, including the Kheis Belt, the Magondi Belt, and portions of the Namaqua-Natal Belt. The Mesoproterozoic (1.6--1.0 Ga) saw the assembly of the supercontinent Rodinia, with the Namaqua-Natal Belt and the Irumide Belt recording orogenic activity during this interval. The Neoproterozoic (1.0--0.54 Ga) is represented by the Damara Belt, the Gariep Belt, the Zambezi Belt, and the Katanga system, which record the Pan-African orogeny associated with the assembly of Gondwana. Each of these tectonic terranes is expected to possess a distinctive electrical resistivity signature, reflecting differences in lithological composition, fluid content, degree of metasomatism, and thermal structure.
+
+The Southern African Magnetotelluric Experiment (SAMTEX) is one of the largest and most comprehensive MT surveys ever conducted on a continental scale. Carried out in multiple phases between 2003 and 2008, SAMTEX deployed broadband and long-period MT stations across Botswana, Namibia, South Africa, Zimbabwe, and neighbouring countries, acquiring data at hundreds of sites spanning the full spectrum of tectonic terranes described above. The primary scientific objectives of SAMTEX included imaging the electrical structure of the lithosphere beneath southern Africa, constraining the depth and nature of the lithosphere--asthenosphere boundary, investigating the role of fluids and melts in the cratonic mantle, and understanding the relationship between surface geology and deep lithospheric structure. The SAMTEX data have been the subject of numerous publications employing two-dimensional (2D) and three-dimensional (3D) deterministic inversion approaches, yielding landmark conductivity models of the region.
+
+Despite the wealth of MT data generated by SAMTEX and the significant advances in deterministic inversion modelling, several important limitations and research gaps remain. First, deterministic inversion methods --- whether based on Occam's principle, Tikhonov regularization, or other approaches --- produce a single ``best-fit'' model that satisfies some optimality criterion (e.g., minimum data misfit subject to maximum model smoothness). While such models are useful, they provide no formal assessment of the uncertainty in the recovered parameters. The question of ``how well do we actually know the resistivity at a given depth?'' cannot be answered rigorously by a single deterministic model. Given that the MT inverse problem is fundamentally non-unique --- an infinite number of subsurface models can produce data fits within the observational error --- the absence of uncertainty quantification is a significant limitation, particularly for geological interpretation where the reliability of inferred features is critical.
+
+Second, while 2D and 3D inversions are essential for capturing lateral variations in resistivity structure, they are computationally expensive and often require subjective choices regarding mesh design, starting models, regularization parameters, and data selection. In regions where the subsurface can be adequately approximated as one-dimensional (i.e., resistivity varies only with depth), a 1D approach offers several advantages: it is computationally efficient, allows for comprehensive uncertainty analysis through probabilistic methods, and can be applied systematically to large datasets.
+
+Third, the application of Bayesian probabilistic inversion methods to the SAMTEX dataset has been limited. Bayesian inversion, which employs Markov Chain Monte Carlo (MCMC) sampling to characterize the full posterior probability distribution of model parameters, provides a principled framework for uncertainty quantification that addresses the non-uniqueness of the MT inverse problem. Moreover, trans-dimensional Bayesian methods, in which the number of model parameters (e.g., the number of layers in a 1D model) is itself treated as an unknown to be determined by the data, offer the additional advantage of automatic model complexity selection, avoiding the subjective choice of a fixed number of layers.
+
+The motivation for this thesis is therefore threefold:
+
+\begin{enumerate}
+    \item \textbf{Data processing and quality control:} To develop and apply a systematic, reproducible workflow for processing the SAMTEX MT transfer function data archived at the IRIS EMTF database, including automated dimensionality analysis using the Swift skew criterion, to identify stations where the 1D Earth approximation is valid.
+
+    \item \textbf{Probabilistic inversion:} To apply a trans-dimensional Bayesian MCMC inversion framework with parallel tempering to the selected 1D stations, recovering not just ``best-fit'' models but full posterior probability distributions of resistivity as a function of depth, including credible intervals that formally quantify model uncertainty.
+
+    \item \textbf{Independent validation:} To validate the 1D Bayesian inversion results by quantitative comparison with independently derived 3D conductivity models, specifically the SA2022 ModEM model, thereby establishing the reliability and complementary value of probabilistic 1D inversions for regional-scale lithospheric studies in southern Africa.
+\end{enumerate}
+
+
+\section*{Key Data Sources and Tools}
+
+The successful execution of this thesis required the integration of multiple data sources, software tools, and programming environments. This section provides a comprehensive overview of the key resources employed at each stage of the research workflow.
+
+\subsection*{Magnetotelluric Transfer Function Data --- IRIS EMTF Database}
+
+The primary geophysical dataset used in this study consists of magnetotelluric transfer function estimates obtained from the IRIS Earth Magnetism Transfer Function (EMTF) database, accessible at \texttt{https://ds.iris.edu/spud/emtf}. The IRIS EMTF database is a publicly available repository maintained by the Incorporated Research Institutions for Seismology (IRIS) Data Management Center that archives electromagnetic transfer functions from MT surveys worldwide. The database provides impedance tensor estimates in the industry-standard Electrical Data Interchange (EDI) format, along with associated metadata including station coordinates, acquisition dates, and processing parameters.
+
+The MT data used in this study were acquired as part of the Southern African Magnetotelluric Experiment (SAMTEX), which represents one of the most extensive regional MT surveys conducted globally. The SAMTEX project was carried out in multiple deployment phases between 2003 and 2008, covering a geographic extent spanning approximately latitudes 12$^\circ$S to 35$^\circ$S and longitudes 10$^\circ$E to 40$^\circ$E. Broadband MT (BBMT) instruments with period ranges typically from 0.001 s to 1{,}000 s and long-period MT (LMT) instruments extending to periods of 10{,}000 s or more were deployed at hundreds of sites across Botswana, Namibia, South Africa, Zimbabwe, Mozambique, and Zambia. The stations sample a diverse range of tectonic environments, including stable Archean cratons, Proterozoic mobile belts, Paleozoic--Mesozoic sedimentary basins, and Cenozoic rift zones.
+
+Each station's transfer function data is provided as an individual EDI file containing the full impedance tensor ($Z_{xx}$, $Z_{xy}$, $Z_{yx}$, $Z_{yy}$) and associated error estimates at discrete frequencies or periods. The EDI files also contain metadata such as the station name (encoded in the \texttt{SITENAME} field of the \texttt{>HEAD} section), geographic coordinates (latitude and longitude, in either decimal degrees or degrees:minutes:seconds format), elevation, and acquisition parameters. The systematic parsing and quality control of these EDI files formed the first stage of the data processing pipeline developed in this thesis.
+
+\subsection*{Tectonic Unit Shapefiles --- McCourt (2013)}
+
+To classify each MT station according to its tectonic setting, this study employed digital shapefiles of the major tectonic units of southern Africa compiled by McCourt (2013). These shapefiles delineate the spatial boundaries of six primary tectonic categories: (i) Archean cratons, including the Kaapvaal and Zimbabwe Cratons; (ii) the Limpopo Mobile Belt; (iii) Paleoproterozoic shields, such as the Rehoboth Province; (iv) Paleoproterozoic mobile belts, including the Kheis and Magondi Belts; (v) Mesoproterozoic mobile belts, principally the Namaqua-Natal Belt and the Irumide Belt; and (vi) Neoproterozoic terranes, including the Damara and Gariep Belts. The shapefiles were provided in the WGS84 geographic coordinate system (EPSG:4326) and were used in conjunction with the GeoPandas library to perform spatial point-in-polygon queries, assigning each MT station to its corresponding tectonic unit.
+
+\subsection*{SA2022 ModEM 3D Conductivity Model}
+
+For independent validation of the Bayesian 1D inversion results, this study utilized the SA2022 three-dimensional conductivity model of southern Africa, derived using the ModEM (Modular Electromagnetic) inversion software. The SA2022 model represents a comprehensive 3D inversion of MT impedance data from the SAMTEX survey and provides a detailed picture of the electrical resistivity distribution beneath southern Africa from the surface to depths exceeding 400 km. The model is discretized on a three-dimensional rectilinear finite-difference grid with variable cell sizes, and the resistivity values are stored as $\log_{10}(\rho)$ in a standard ModEM model file format. One-dimensional resistivity-depth profiles were extracted from this 3D model at the grid cells nearest to each of the 24 selected stations, providing an independent benchmark against which the Bayesian posterior estimates could be evaluated.
+
+\subsection*{Python Programming Environment}
+
+The data processing, quality control, visualization, and post-inversion analysis stages of this thesis were implemented using the Python programming language (version 3.x), leveraging a suite of scientific computing and geospatial libraries:
+
+\begin{itemize}
+    \item \textbf{mt\_metadata:} A specialized Python library for reading, writing, and manipulating MT metadata and transfer function data. This library was used to parse EDI files, extract impedance tensor data, and retrieve period arrays from each station file. The \texttt{TF} (Transfer Function) class provided a convenient interface for accessing impedance data as complex-valued NumPy arrays.
+
+    \item \textbf{NumPy:} The fundamental package for numerical computing in Python, used extensively for array manipulation, complex arithmetic, linear algebra, and statistical computations. Key operations included impedance tensor algebra (computing determinant impedance, Swift skew, apparent resistivity, and phase), data masking and filtering, and log-space subsampling of period arrays.
+
+    \item \textbf{Pandas:} A data manipulation and analysis library used for managing station metadata, building classification tables, performing group-by operations on tectonic units, and exporting results to CSV format for downstream processing.
+
+    \item \textbf{GeoPandas:} An extension of Pandas for geospatial data, used to perform spatial join operations between MT station point locations and tectonic unit polygon shapefiles, enabling automated classification of stations by tectonic setting.
+
+    \item \textbf{Matplotlib and Cartopy:} Visualization libraries used for generating publication-quality figures, including geographic maps of station locations overlaid on tectonic unit boundaries, apparent resistivity sounding curves, quality control grid plots, and comparison plots between 1D Bayesian inversion results and 3D ModEM profiles.
+
+    \item \textbf{SciPy:} The scientific computing library, used primarily for its interpolation functionality (\texttt{interp1d}) when resampling 3D ModEM resistivity profiles onto the same depth grid as the Bayesian inversion output for quantitative comparison.
+
+    \item \textbf{h5py:} A Python interface to the HDF5 binary data format, used for reading the MATLAB \texttt{.mat} files (saved in HDF5-compatible v7.3 format) containing the Bayesian inversion output, including posterior resistivity distributions, credible intervals, and interface probability density functions.
+
+    \item \textbf{Shapely:} A library for manipulation and analysis of planar geometric objects, used in conjunction with GeoPandas for point-in-polygon testing and spatial queries.
+\end{itemize}
+
+\subsection*{MATLAB Programming Environment}
+
+The core Bayesian inversion algorithm --- the trans-dimensional reversible-jump MCMC sampler with parallel tempering --- was implemented and executed in MATLAB. MATLAB was chosen for the inversion engine due to its efficient handling of matrix operations, built-in support for complex arithmetic, and the availability of a well-tested forward modelling routine for 1D MT impedance computation. The MATLAB codebase consisted of a main driver script (\texttt{Bayesian\_1D\_MTDC\_J.m}) and a library of supporting functions organized in the \texttt{MT\_DC\_function} directory, including routines for forward modelling (\texttt{MT1DFW.m}), MCMC proposal moves (birth, death, move, resistivity change, noise change), likelihood evaluation (\texttt{Residual.m}), chain initialization (\texttt{initialise\_chain.m}), and parallel tempering (\texttt{swap\_temperatures.m}). Post-inversion chain processing scripts in the \texttt{Process\_chains} directory handled convergence diagnostics, burn-in removal, chain thinning, posterior PDF computation, and statistical summary extraction.
+
+
+\section*{Methodological Advances}
+
+This thesis contributes to the methodological landscape of magnetotelluric data interpretation through several interconnected advances that span the entire workflow from raw data processing to final model validation. Each advance addresses a specific limitation or gap in the conventional MT interpretation pipeline.
+
+\subsection*{Systematic Data Screening Using the Swift Skew Criterion}
+
+A critical prerequisite for any 1D inversion is the identification of stations where the one-dimensional Earth approximation is valid --- that is, where the subsurface resistivity varies primarily with depth and lateral variations are negligible at the scale of the electromagnetic skin depth. In this study, a rigorous and fully automated dimensionality screening workflow was developed and applied to the entire SAMTEX EDI dataset. For each station, the Swift skew parameter was computed at every available period as:
+
+\begin{equation}
+\kappa(\omega) = \frac{|Z_{xx}(\omega) + Z_{yy}(\omega)|}{|Z_{xy}(\omega) - Z_{yx}(\omega)|}
+\end{equation}
+
+The station-level skew was then taken as the mean value across all valid periods (excluding periods with missing or flagged data). A threshold of $\kappa < 0.2$ was applied to classify stations as ``1D-like,'' consistent with the widely adopted criterion in the MT literature. This automated screening was applied uniformly to all EDI files in the dataset, ensuring objective and reproducible station selection. The processing pipeline also incorporated data sanitization steps, including the replacement of asterisk-encoded null values and zero-value placeholders with NaN flags, to handle inconsistencies in the original EDI files.
+
+\subsection*{Determinant Impedance Analysis for Robust 1D Characterization}
+
+For all stations passing the skew threshold, the rotationally invariant determinant impedance was computed as a robust scalar summary of the full impedance tensor:
+
+\begin{equation}
+Z_{\text{det}}(\omega) = \sqrt{Z_{xy}(\omega) \cdot Z_{yx}(\omega) - Z_{xx}(\omega) \cdot Z_{yy}(\omega)}
+\end{equation}
+
+The determinant apparent resistivity was then derived as:
+
+\begin{equation}
+\rho_{\text{det}}(\omega) = \frac{|Z_{\text{det}}(\omega)|^2}{\mu_0 \omega} \times 10^{-6}
+\end{equation}
+
+\noindent where the factor $10^{-6}$ accounts for the unit conversion from the EDI standard units of (mV/km)/nT. The determinant impedance provides a single, orientation-independent measure of the subsurface impedance response, making it less susceptible to galvanic distortion, static shift, and coordinate rotation ambiguities that can affect individual tensor elements. Determinant apparent resistivity sounding curves were plotted and visually inspected for quality control, enabling the identification and removal of stations with noisy, incomplete, or anomalous data. A mid-band slope analysis was additionally performed, computing the log-log gradient of the apparent resistivity curve over the period range 1--100 s to characterize the general resistivity trend with depth.
+
+\subsection*{Representative Station Selection Across Tectonic Units}
+
+Rather than inverting all 1D-like stations (which would number in the hundreds), a carefully curated subset of 24 representative stations was selected for Bayesian inversion. The selection was guided by two criteria: (i) each station must exhibit a smooth, well-defined determinant apparent resistivity curve with adequate period bandwidth and minimal noise, and (ii) the selected stations must provide balanced geographic and tectonic coverage across all six major tectonic units identified in the McCourt (2013) classification. The final selection comprised four stations in each of the six tectonic categories: Archean cratons (SAMTEX.bot228.2005, SAMTEX.rtz401.2005, SAMTEX.kap067.2003, SAMTEX.bot407.2005), Limpopo Mobile Belt (SAMTEX.bot416.2005, SAMTEX.kal017.2008, SAMTEX.san006.2008, SAMTEX.san008.2008), Mesoproterozoic belts (SAMTEX.kap010.2003, SAMTEX.zim128.2005, SAMTEX.mof102.2005, SAMTEX.NEN003.2006), Neoproterozoic terranes (SAMTEX.ELZ291A.2008, SAMTEX.dmb017.2006, SAMTEX.oka008.2006, SAMTEX.CPV027.2006), Paleoproterozoic belts (SAMTEX.k2g006.2006, SAMTEX.mof107.2005, SAMTEX.san011.2008, SAMTEX.mak002.2006), and Paleoproterozoic shields (SAMTEX.kim422.2004, SAMTEX.kim432.2004, SAMTEX.kim435.2004, SAMTEX.rtz417.2005).
+
+\subsection*{Impedance Data Preparation for Inversion}
+
+The selected stations' impedance data required careful preparation before being ingested by the MATLAB inversion code. The off-diagonal impedance component $Z_{xy}$ was extracted from each station's EDI file and subjected to the following processing steps:
+
+\begin{enumerate}
+    \item \textbf{Unit conversion:} The impedance values were converted from the EDI standard units of (mV/km)/nT to SI units (Ohms) by multiplying by a factor of $10^{-3}$.
+
+    \item \textbf{Error estimation:} Data errors were estimated as a percentage of the impedance amplitude, following the convention $\sigma_Z = 0.01 \times p \times |Z_{xy}|$, where $p = 3.0$ is the noise percentage. This approach provides frequency-dependent error bars that scale with the signal amplitude, ensuring consistent relative error across the period range.
+
+    \item \textbf{Data cleaning:} Periods with non-finite impedance values, zero amplitudes, or missing data were removed.
+
+    \item \textbf{Sorting:} Data were sorted in order of increasing period.
+
+    \item \textbf{Log-space subsampling:} To reduce computational cost while preserving the essential features of the sounding curve, the data were subsampled to approximately 20 points uniformly distributed in logarithmic period space. This was achieved by defining 20 equally spaced target values in $\log_{10}(T)$ and selecting the nearest available data point to each target.
+
+    \item \textbf{Output formatting:} The prepared data were written to ASCII files in the four-column format expected by the MATLAB inversion code: period (s), real part of $Z_{xy}$ (Ohm), imaginary part of $Z_{xy}$ (Ohm), and error $\sigma_Z$ (Ohm).
+\end{enumerate}
+
+\subsection*{Trans-dimensional Bayesian Inversion with Parallel Tempering}
+
+The core inversion methodology employed in this thesis is a trans-dimensional Bayesian MCMC algorithm that treats the 1D resistivity structure as a piecewise-constant (layered) model in which both the number of layers and their properties (thicknesses and resistivities) are unknown parameters to be inferred from the data. The key features of the inversion framework include:
+
+\begin{itemize}
+    \item \textbf{Reversible-jump MCMC:} The sampler employs five types of proposal moves --- birth (creation of a new layer), death (removal of an existing layer), move (relocation of a layer interface), value change (perturbation of a layer's resistivity), and noise change (adjustment of the data error scaling factor) --- selected probabilistically at each iteration. Birth and death moves allow the model dimensionality to change, while move and value change moves explore the parameter space at fixed dimensionality.
+
+    \item \textbf{Parallel tempering:} Multiple MCMC chains are run simultaneously at different temperatures $T$, with the modified acceptance probability $\alpha = \min\left[0, (-L_{\text{proposed}} + L_{\text{current}})/T\right]$ where $L$ denotes the negative log-likelihood. Chains at elevated temperatures explore a flattened likelihood surface and can more easily traverse energy barriers between local modes. Periodic swaps between chains at different temperatures propagate promising solutions to the target ($T = 1$) chain.
+
+    \item \textbf{Hierarchical noise estimation:} The data error scaling factor is treated as a hyperparameter that is jointly estimated with the model parameters, allowing the inversion to automatically calibrate the balance between data fit and model complexity.
+
+    \item \textbf{Prior specification:} Layer depths are parameterized in $\log_{10}$ space over the range $\log_{10}(10)$ to $\log_{10}(350{,}000)$ metres (10 m to 350 km), with a minimum layer thickness constraint of 1{,}000 m. Resistivities are parameterized in $\log_{10}$ space over the range $\log_{10}(0.1)$ to $\log_{10}(100{,}000)$ $\Omega$m ($10^{-1}$ to $10^{5}$ $\Omega$m). Uniform priors are used for both depth and resistivity. The number of layers is allowed to vary between 2 and 30.
+\end{itemize}
+
+\subsection*{Post-inversion Analysis and Statistical Summary}
+
+After the MCMC sampling was completed, the stored chain samples were processed to extract robust statistical summaries of the posterior distribution. This involved:
+
+\begin{itemize}
+    \item \textbf{Burn-in removal:} The first 50\% of the MCMC steps were discarded to allow the chains to converge from their random initial states to the stationary posterior distribution.
+
+    \item \textbf{Chain thinning:} To reduce autocorrelation between successive samples, every 10th to 25th sample was retained, yielding an effectively independent sample set.
+
+    \item \textbf{Quality filtering:} Samples with normalized root-mean-square (nRMS) misfit exceeding a threshold (typically 20) were excluded as poorly fitting outliers.
+
+    \item \textbf{Posterior PDF construction:} The depth axis was discretized into bins of width $\Delta z = 1{,}000$--$2{,}000$ m over the range 0--350{,}000 m, and the $\log_{10}(\rho)$ axis was discretized into bins of width 0.1 over the range $-1$ to 6. For each depth bin, a histogram of $\log_{10}(\rho)$ values across all retained samples was computed and normalized to yield the posterior probability density function.
+
+    \item \textbf{Credible intervals:} The 5th and 95th percentile values of $\log_{10}(\rho)$ were computed at each depth bin, providing a 90\% credible interval that quantifies the posterior uncertainty.
+
+    \item \textbf{Interface probability density:} The probability of a layer interface at each depth was computed by counting the fraction of samples containing an interface within each depth bin, providing information about the likelihood and sharpness of subsurface discontinuities.
+
+    \item \textbf{Kullback-Leibler divergence:} The KL divergence between the posterior and prior distributions was computed at each depth, quantifying the information gained from the data. Depths where the KL divergence is large indicate regions where the data have significantly updated the prior beliefs.
+
+    \item \textbf{Layer number histogram:} A histogram of the number of layers across all retained samples was computed, providing insight into the model complexity favoured by the data.
+\end{itemize}
+
+\subsection*{Validation Against Independent 3D Models}
+
+The final methodological contribution of this thesis is a systematic, quantitative comparison between the 1D Bayesian inversion results and independently derived 3D resistivity models. For each of the 24 selected stations, a 1D resistivity-depth profile was extracted from the SA2022 ModEM 3D conductivity model by identifying the model grid cell nearest to the station's geographic coordinates. The extracted ModEM profiles were then compared with the Bayesian posterior mean and 5th--95th percentile credible intervals on a common depth axis (0--350 km). The root-mean-square (RMS) misfit between the $\log_{10}(\rho)$ profiles was computed as:
+
+\begin{equation}
+\text{RMS} = \sqrt{\frac{1}{N} \sum_{i=1}^{N} \left[\log_{10}(\rho_{\text{1D},i}) - \log_{10}(\rho_{\text{3D},i})\right]^2}
+\end{equation}
+
+\noindent where $N$ is the number of depth points in the comparison window. This metric provides an objective assessment of the agreement between the probabilistic 1D inversions and the deterministic 3D model, allowing identification of depths and tectonic settings where the models agree or diverge.
+
+
+\section*{Regional Challenges and Research Gaps}
+
+The application of magnetotelluric methods in southern Africa, while scientifically rewarding, is accompanied by a number of practical and methodological challenges. Understanding these challenges is essential for designing appropriate data processing workflows and inversion strategies.
+
+\subsection*{Three-Dimensional Complexity of the Subsurface}
+
+Southern Africa's geological history is characterized by multiple episodes of continental assembly, rifting, orogenesis, and magmatism spanning over three billion years. This protracted and complex tectonic history has produced a subsurface that is, in general, three-dimensional in its resistivity distribution. Lateral variations in resistivity occur at all scales, from regional contrasts between cratonic lithosphere and mobile belt lithosphere to local heterogeneities associated with shear zones, intrusions, and sedimentary basins. For 1D inversion to be meaningful, it is essential to identify stations where lateral variations are sufficiently small that the impedance tensor can be adequately explained by a horizontally layered model. The Swift skew analysis provides a first-order assessment of dimensionality, but even stations with low skew values may be influenced by distant lateral boundaries or galvanic distortion from near-surface heterogeneities. This study addresses this challenge through careful station selection and by validating the 1D results against a 3D model that captures lateral variations.
+
+\subsection*{Data Quality Variability}
+
+The SAMTEX dataset, while extensive, contains stations with widely varying data quality. Some stations were deployed for only a few days, resulting in limited long-period bandwidth and noisy transfer function estimates at the longest periods. Other stations were affected by cultural electromagnetic noise sources (power lines, pipelines, electric fences) that contaminate the high-frequency data. The EDI files in the IRIS EMTF database also exhibit formatting inconsistencies, including different conventions for representing missing data (asterisks, zeros, or NaN), different coordinate formats (decimal degrees versus degrees:minutes:seconds), and occasional metadata errors. The data sanitization and quality control pipeline developed in this study addresses these issues through automated parsing, validation, and filtering routines.
+
+\subsection*{Non-Uniqueness of the MT Inverse Problem}
+
+The MT inverse problem is inherently ill-posed and non-unique. For any given set of MT observations (apparent resistivity and phase as functions of period), there exist infinitely many subsurface resistivity models that produce acceptably similar predicted data within the observational uncertainties. This non-uniqueness arises from the diffusive nature of electromagnetic wave propagation in the Earth, which acts as a natural low-pass filter that smooths out fine-scale structure. Deterministic inversion methods address non-uniqueness by imposing regularization constraints (e.g., minimum model norm, maximum smoothness) that select a single model from the infinite set of acceptable solutions. While useful, this approach masks the true range of models consistent with the data. Bayesian inversion explicitly addresses non-uniqueness by sampling the full posterior distribution, revealing the range of models (and their relative probabilities) that are consistent with both the data and the prior information. The trans-dimensional formulation further addresses the question of model complexity by allowing the data to determine the appropriate number of layers.
+
+\subsection*{Limited Application of Probabilistic Methods to SAMTEX Data}
+
+A survey of the existing literature reveals that the SAMTEX data have been extensively interpreted using deterministic 2D inversion codes (e.g., REBOCC, WinGLink) and the ModEM 3D inversion code. However, systematic application of probabilistic (Bayesian) inversion methods to the SAMTEX dataset has been limited. Trans-dimensional Bayesian 1D inversions, in particular, have not been applied across the full diversity of tectonic terranes sampled by SAMTEX. This represents a significant gap, as Bayesian methods provide unique insights into model uncertainty and resolution that are not available from deterministic approaches. By applying such methods to a representative selection of stations from each tectonic unit, this thesis fills an important methodological gap and demonstrates the complementary value of probabilistic inversions.
+
+\subsection*{Lack of Systematic 1D--3D Model Comparison}
+
+While both 1D and 3D inversions have been performed on subsets of the SAMTEX data in previous studies, systematic and quantitative comparisons between independently derived 1D and 3D models have been lacking. Such comparisons are valuable for several reasons: they test the internal consistency of different inversion approaches, they identify stations where the 1D approximation breaks down, and they provide estimates of the lateral resolution limits of 1D methods. By comparing Bayesian 1D inversions with the SA2022 ModEM 3D model at each of the 24 selected stations, this thesis provides the first such systematic comparison for the SAMTEX dataset.
+
+
+\section*{Objectives of the Thesis}
+
+Based on the background, motivation, and identified research gaps outlined above, the specific objectives of this thesis are as follows:
+
+\begin{enumerate}
+    \item \textbf{Data acquisition and preprocessing:} To obtain magnetotelluric transfer function data from the SAMTEX survey archived at the IRIS Earth Magnetism Transfer Function (EMTF) database (\texttt{https://ds.iris.edu/spud/emtf}) in EDI format, and to develop an automated preprocessing pipeline for parsing, sanitizing, and validating the EDI files, including the extraction of station metadata (site names, geographic coordinates), handling of inconsistent data formats, and replacement of flagged or missing values.
+
+    \item \textbf{Dimensionality analysis and 1D station identification:} To compute the Swift skew parameter for all available MT stations across the full range of available periods, and to apply a skew threshold of $\kappa < 0.2$ to objectively identify stations where the one-dimensional Earth approximation is valid. To generate frequency distribution tables and geographic maps showing the spatial distribution of 1D-like and non-1D stations.
+
+    \item \textbf{Tectonic classification:} To classify all 1D-like stations according to their tectonic setting by performing spatial point-in-polygon queries using published geological shapefiles of southern African tectonic units (McCourt, 2013), assigning each station to one of six categories: Archean, Limpopo, Paleoproterozoic shields, Paleoproterozoic belts, Mesoproterozoic belts, or Neoproterozoic terranes.
+
+    \item \textbf{Determinant impedance computation and quality control:} To compute the rotationally invariant determinant impedance, apparent resistivity, and phase for all 1D-like stations, and to generate quality control plots (apparent resistivity sounding curves organized by tectonic unit) to assess data quality and identify stations with noisy, incomplete, or anomalous responses.
+
+    \item \textbf{Representative station selection:} To select a subset of 24 high-quality stations (four per tectonic unit) that provide balanced geographic and geological coverage of the study area, based on combined criteria of data quality (smooth sounding curves, adequate period bandwidth) and tectonic representativeness.
+
+    \item \textbf{Impedance data preparation:} To extract the off-diagonal impedance component $Z_{xy}$ from each selected station's EDI file, apply unit conversion from (mV/km)/nT to Ohms, estimate frequency-dependent data errors at a specified noise level (3\%), perform log-spaced subsampling to approximately 20 data points per station, and write the prepared data in the ASCII format required by the MATLAB inversion code.
+
+    \item \textbf{Trans-dimensional Bayesian 1D inversion:} To perform trans-dimensional Bayesian 1D MT inversion for each of the 24 selected stations using a reversible-jump MCMC algorithm with parallel tempering, configured with appropriate prior bounds (depth range 10 m to 350 km; resistivity range $10^{-1}$ to $10^{5}$ $\Omega$m; 2 to 30 layers), proposal parameters, and sampling settings (20 steps $\times$ 1{,}000 samples per step per chain, with 2 parallel chains).
+
+    \item \textbf{Post-inversion analysis:} To process the MCMC output chains, including convergence diagnostics (nRMS and log-likelihood traces), burn-in removal (first 50\% of steps), chain thinning (every 10th--25th sample), posterior PDF construction on a depth--resistivity grid, extraction of 5th and 95th percentile credible intervals, interface probability density computation, layer number histograms, and Kullback-Leibler divergence analysis.
+
+    \item \textbf{Independent validation:} To extract 1D resistivity-depth profiles from the SA2022 ModEM 3D conductivity model at grid cells nearest to each of the 24 selected stations, and to perform quantitative comparison with the Bayesian 1D inversion results by computing the RMS misfit between $\log_{10}(\rho)$ profiles over a common depth range (0--350 km). To generate overlay plots showing the 3D-extracted profiles alongside the Bayesian posterior mean and credible intervals.
+
+    \item \textbf{Geological interpretation:} To interpret the recovered 1D resistivity-depth structures in the context of the known geology and tectonic evolution of southern Africa, including identification of conductive and resistive layers, estimation of lithospheric thickness, and assessment of tectonic unit-specific resistivity characteristics.
+\end{enumerate}
+
+
+\section*{Thesis Organization}
+
+This thesis is organized into six chapters that follow a logical progression from theoretical foundations through methodology, results, and interpretation.
+
+\textbf{Chapter 1: Introduction} (this chapter) establishes the context for the research by presenting the background and motivation for the study, introducing the magnetotelluric method and its application to the investigation of continental lithosphere, describing the geological setting of southern Africa and the significance of the SAMTEX dataset, identifying the key data sources and computational tools employed, highlighting the methodological advances contributed by this work, discussing regional challenges and research gaps that motivate the study, stating the specific research objectives, outlining the thesis organization, and defining the fundamental terminologies and concepts used throughout the document.
+
+\textbf{Chapter 2: Literature Review} presents a comprehensive survey of the relevant scientific literature, organized into four main themes: (i) the theoretical foundations of the magnetotelluric method, including the governing electromagnetic equations, source field characteristics, and the relationship between impedance, apparent resistivity, phase, and subsurface conductivity; (ii) a review of previous MT investigations in southern Africa, with emphasis on the SAMTEX project and its contributions to understanding the electrical structure of the region's lithosphere; (iii) the theory of Bayesian inversion and trans-dimensional MCMC methods, including the mathematical framework, convergence properties, and applications in geophysics; and (iv) the geological framework of the study area, including the tectonic evolution, major geological units, and the expected relationships between geological history and electrical resistivity.
+
+\textbf{Chapter 3: Methodology} provides a detailed and reproducible description of all methods and procedures employed in this study. This includes the complete data processing pipeline (EDI file parsing, data sanitization, skew computation, tectonic classification, determinant impedance analysis, station selection, impedance data preparation), the mathematical formulation of the trans-dimensional Bayesian MCMC inversion algorithm (prior specification, proposal distributions, acceptance criteria, parallel tempering implementation, forward modelling), and the post-inversion analysis procedures (convergence diagnostics, burn-in determination, posterior PDF computation, model comparison metrics). This chapter also describes the specific parameter settings and configurations used for the inversions.
+
+\textbf{Chapter 4: Results} presents the outcomes of each stage of the analysis. This includes summary statistics of the dimensionality screening (number of stations passing the skew threshold, distribution across tectonic units), geographic maps showing station locations and classifications, quality control plots of determinant apparent resistivity curves, and the complete Bayesian 1D inversion results for all 24 selected stations. For each station, the results include the posterior PDF of resistivity as a function of depth, the 5th--95th percentile credible intervals, the interface probability density function, convergence diagnostics (nRMS and log-likelihood traces), and the layer number histogram. Overlay comparison plots with the ModEM 3D profiles and RMS misfit values are also presented.
+
+\textbf{Chapter 5: Discussion} interprets the results in the broader geological and geophysical context. This chapter discusses the resistivity structures observed beneath each tectonic unit, identifies common features and anomalies, compares the Bayesian 1D models with the ModEM 3D models and previous published results, evaluates the reliability of the 1D approximation in different tectonic settings, discusses the implications of the observed resistivity structures for lithospheric composition and thermal state, and addresses the strengths and limitations of the probabilistic inversion approach.
+
+\textbf{Chapter 6: Conclusions and Recommendations} summarizes the key findings and contributions of the thesis, revisits the research objectives and assesses the degree to which they have been achieved, and provides recommendations for future work, including suggestions for extending the Bayesian approach to 2D/3D geometries, incorporating additional data types (e.g., DC resistivity, seismic), and applying the methodology to other regions and datasets.
+
+
+\section{Basic Terminologies and Definitions}
+
+This section introduces and provides detailed explanations of the fundamental concepts, methods, and terminologies that are used throughout this thesis. A thorough understanding of these concepts is essential for following the data processing workflows, inversion algorithms, and interpretation discussions presented in subsequent chapters. Each subsection is devoted to a single key concept and provides its definition, mathematical formulation (where applicable), physical significance, and relevance to the present study.
+
+\subsection{Magnetotellurics (MT)}
+
+Magnetotellurics (MT) is a passive geophysical exploration method that uses naturally occurring electromagnetic (EM) fields to determine the electrical resistivity (or conductivity) structure of the Earth's subsurface, from depths of a few tens of metres to several hundreds of kilometres. The term ``magnetotellurics'' derives from the measurement of both magnetic field variations (``magneto-'') and telluric (Earth) currents (``-tellurics'') at the surface.
+
+The fundamental principle of the MT method is that naturally occurring time-varying electromagnetic fields, originating from external sources, induce electric currents (telluric currents) within the conducting Earth. These induced currents, in turn, generate secondary magnetic fields that superimpose on the primary (source) field. By simultaneously measuring the horizontal components of the electric field ($E_x$, $E_y$, in mV/km) and the magnetic field ($H_x$, $H_y$, in nT or A/m) at the Earth's surface over a range of frequencies, the transfer function (impedance tensor) relating these fields can be estimated, from which the subsurface resistivity distribution is inferred.
+
+The natural EM source fields that drive the MT method originate from two principal mechanisms:
+
+\begin{enumerate}
+    \item \textbf{Magnetospheric--ionospheric interactions (periods $> \sim$1 s):} The continuous interaction between the solar wind plasma and the Earth's magnetosphere generates large-scale, time-varying magnetic field fluctuations known as geomagnetic micropulsations. These include continuous pulsations (Pc1--Pc5, spanning periods from approximately 0.2 s to 600 s) and irregular pulsations (Pi1, Pi2) associated with magnetic substorms. At even longer periods (hours to days), geomagnetic storms driven by coronal mass ejections produce significant EM energy. These low-frequency signals penetrate deep into the Earth, enabling the MT method to image the mid-to-lower crust and upper mantle.
+
+    \item \textbf{Worldwide thunderstorm activity (periods $< \sim$1 s):} Lightning discharges in the tropics radiate broadband electromagnetic energy known as ``sferics'' (atmospheric) that propagates globally within the Earth--ionosphere waveguide. This energy provides the MT source signal at frequencies above approximately 1 Hz, enabling imaging of the shallow subsurface. The frequency band between approximately 0.1 Hz and 5 Hz, where neither source mechanism is dominant, is known as the ``dead band'' and is characterized by reduced signal-to-noise ratio.
+\end{enumerate}
+
+A key property of the MT method is its inherent depth-sounding capability, which arises from the frequency-dependent penetration of electromagnetic fields into a conducting medium. The skin depth, $\delta$, defines the depth at which the amplitude of a plane electromagnetic wave is attenuated to $1/e$ (approximately 37\%) of its surface value:
+
+\begin{equation}
+\delta = \sqrt{\frac{2\rho}{\mu_0 \omega}} = \sqrt{\frac{\rho T}{\pi \mu_0}} \approx 503 \sqrt{\rho T} \text{ (metres)}
+\end{equation}
+
+\noindent where $\rho$ is the resistivity of the medium (in $\Omega$m), $\mu_0 = 4\pi \times 10^{-7}$ H/m is the magnetic permeability of free space, $\omega = 2\pi/T$ is the angular frequency (rad/s), and $T$ is the period (s). This relationship shows that at a given period, the skin depth increases with resistivity (signals penetrate deeper in more resistive rocks), and at a given resistivity, the skin depth increases with period (longer-period signals probe greater depths). For typical crustal resistivities of 100--10{,}000 $\Omega$m and periods of 0.01--10{,}000 s, the skin depth ranges from a few hundred metres to several hundred kilometres, demonstrating the remarkable depth range of the MT method.
+
+In practice, an MT survey involves deploying a five-component sensor array at each measurement site: two orthogonal horizontal electric dipoles (typically oriented north--south and east--west, each 50--100 m in length, using non-polarizing electrodes) and three orthogonal magnetic field sensors (two horizontal and one vertical, using induction coils or fluxgate magnetometers). Time-series data are recorded continuously for durations ranging from hours (for broadband MT targeting crustal depths) to weeks or months (for long-period MT targeting upper mantle depths). The recorded time series are processed using robust statistical methods (e.g., Egbert and Booker's robust processing, bounded influence estimators) to estimate the frequency-dependent impedance tensor, which forms the primary data product for subsequent analysis and inversion.
+
+\subsection{Impedance Tensor}
+
+The impedance tensor $\mathbf{Z}$ is the fundamental quantity estimated from MT measurements. It is a $2 \times 2$ complex-valued, frequency-dependent tensor that describes the linear relationship between the horizontal electric field vector $\mathbf{E} = (E_x, E_y)^T$ and the horizontal magnetic field vector $\mathbf{H} = (H_x, H_y)^T$ at the Earth's surface:
+
+\begin{equation}
+\begin{pmatrix} E_x(\omega) \\ E_y(\omega) \end{pmatrix} = \begin{pmatrix} Z_{xx}(\omega) & Z_{xy}(\omega) \\ Z_{yx}(\omega) & Z_{yy}(\omega) \end{pmatrix} \begin{pmatrix} H_x(\omega) \\ H_y(\omega) \end{pmatrix}
+\end{equation}
+
+Each element $Z_{ij}(\omega)$ of the impedance tensor is a complex number with real and imaginary parts that vary with angular frequency $\omega = 2\pi f$. The standard units of impedance in the MT convention are (mV/km)/nT, which are equivalent to $10^{-3}$ V/(Am) or $10^{-3}$ Ohms. The conversion to SI units (Ohms) requires multiplication by $10^{-3}$.
+
+The structure of the impedance tensor contains information about the dimensionality of the subsurface conductivity distribution:
+
+\begin{itemize}
+    \item \textbf{1D (horizontally layered) Earth:} The diagonal elements vanish ($Z_{xx} = Z_{yy} = 0$) and the off-diagonal elements are equal in magnitude but opposite in sign ($Z_{xy} = -Z_{yx}$). The impedance is independent of the measurement coordinate system orientation.
+
+    \item \textbf{2D Earth:} When the measurement axes are aligned with the geoelectric strike direction, the diagonal elements vanish ($Z_{xx} = Z_{yy} = 0$), but $Z_{xy} \neq -Z_{yx}$. The two off-diagonal elements correspond to the transverse electric (TE) and transverse magnetic (TM) polarization modes, which have distinct sensitivities to the subsurface structure. When the measurement axes are not aligned with the strike, all four elements are generally non-zero, but the tensor can be rotated to recover the strike-aligned form.
+
+    \item \textbf{3D Earth:} All four elements are generally non-zero and cannot be reduced to a simpler form by coordinate rotation. The impedance tensor carries information about the full three-dimensional conductivity distribution in the vicinity of the measurement site.
+\end{itemize}
+
+In this study, the impedance tensor data were obtained from EDI files downloaded from the IRIS EMTF database. The off-diagonal component $Z_{xy}$ (relating the $x$-component of the electric field to the $y$-component of the magnetic field) was extracted for 1D inversion. For dimensionality analysis, all four tensor elements were used to compute the Swift skew parameter.
+
+\subsection{Apparent Resistivity and Phase}
+
+Apparent resistivity and impedance phase are the two fundamental MT response functions derived from the impedance tensor elements. Together, they provide a physically intuitive representation of the subsurface resistivity structure as a function of sounding period (or frequency).
+
+\textbf{Apparent resistivity} ($\rho_a$) is defined, for any impedance tensor element $Z_{ij}$, as:
+
+\begin{equation}
+\rho_{a,ij}(\omega) = \frac{|Z_{ij}(\omega)|^2}{\mu_0 \omega}
+\end{equation}
+
+\noindent where $|Z_{ij}|$ is the modulus (absolute value) of the complex impedance, $\mu_0 = 4\pi \times 10^{-7}$ H/m is the magnetic permeability of free space, and $\omega = 2\pi/T$ is the angular frequency. The apparent resistivity has units of $\Omega$m and represents the resistivity of a hypothetical uniform half-space that would produce the same impedance value at the given frequency. For a truly homogeneous half-space of resistivity $\rho$, the apparent resistivity equals $\rho$ at all frequencies. For a layered or heterogeneous Earth, $\rho_a$ varies with frequency, and its frequency dependence encodes information about the depth-dependent resistivity structure.
+
+When $\rho_a$ is plotted as a function of period $T$ on log-log axes (the standard ``MT sounding curve''), the following qualitative interpretation applies: at short periods, the curve reflects the resistivity of the shallow subsurface; at long periods, it reflects the resistivity at greater depths; and the transition between different resistivity levels manifests as ascending or descending segments of the curve.
+
+\textbf{Impedance phase} ($\phi$) is defined as:
+
+\begin{equation}
+\phi_{ij}(\omega) = \arctan\left(\frac{\text{Im}(Z_{ij}(\omega))}{\text{Re}(Z_{ij}(\omega))}\right)
+\end{equation}
+
+\noindent where $\text{Re}(Z_{ij})$ and $\text{Im}(Z_{ij})$ are the real and imaginary parts of the impedance, respectively. The phase has units of degrees and provides information complementary to the apparent resistivity. For a homogeneous half-space, the phase is exactly 45$^\circ$ at all frequencies. Departures from 45$^\circ$ indicate vertical gradients in resistivity: phases greater than 45$^\circ$ indicate that resistivity decreases with depth (the electromagnetic field encounters increasingly conductive material), while phases less than 45$^\circ$ indicate that resistivity increases with depth.
+
+The apparent resistivity and phase are not independent quantities; they are related through the impedance, and for a physically realizable conductivity structure, they must satisfy certain consistency relations. In this study, apparent resistivity and phase were computed both from individual tensor elements (for quality control) and from the rotationally invariant determinant impedance (for 1D characterization).
+
+\subsection{Swift Skew}
+
+The Swift skew, introduced by Swift (1967), is one of the most widely used dimensionality indicators in magnetotelluric analysis. It is defined as the ratio of the diagonal sum to the anti-diagonal difference of the impedance tensor:
+
+\begin{equation}
+\kappa(\omega) = \frac{|Z_{xx}(\omega) + Z_{yy}(\omega)|}{|Z_{xy}(\omega) - Z_{yx}(\omega)|}
+\end{equation}
+
+The physical rationale for this definition is as follows. For an ideal 1D or 2D Earth (in the strike-aligned coordinate system), the diagonal elements of the impedance tensor are identically zero ($Z_{xx} = Z_{yy} = 0$), so the numerator vanishes and $\kappa = 0$. Non-zero diagonal elements arise from three-dimensional effects, galvanic distortion, or noise, causing the skew to become positive. The denominator ($|Z_{xy} - Z_{yx}|$) serves as a normalization factor proportional to the overall impedance amplitude, ensuring that the skew is a dimensionless quantity that is comparable across different resistivity environments and frequencies.
+
+In practice, the skew is computed at each available period and may vary significantly across the frequency range for a single station. Several conventions exist for summarizing the skew as a single number per station: the mean skew, the median skew, or the skew evaluated at specific target periods. In this study, the mean skew across all valid periods was used as the summary statistic.
+
+The threshold for classifying a station as ``1D-like'' is somewhat subjective and varies in the literature, with values ranging from 0.1 to 0.4. A threshold of $\kappa < 0.2$ was adopted in this study, following the recommendation of several MT practitioners who consider this value to indicate a sufficiently 1D impedance tensor for robust 1D inversion. Stations with $\kappa \geq 0.2$ were classified as exhibiting significant 3D effects and were excluded from the 1D inversion.
+
+It should be noted that the Swift skew is sensitive not only to intrinsic 3D structure but also to galvanic distortion of the electric field by near-surface heterogeneities. Galvanic distortion can produce non-zero diagonal elements even over a 1D or 2D subsurface, potentially causing the skew to overestimate the true degree of three-dimensionality. More sophisticated dimensionality analysis tools, such as the phase tensor (Caldwell et al., 2004) or the WAL rotational invariants (Weaver et al., 2000), are less susceptible to galvanic distortion. However, the Swift skew remains a useful and widely applied first-order screening tool, and its application in this study is complemented by visual inspection of the sounding curves and comparison with 3D models.
+
+\subsection{Determinant Impedance}
+
+The determinant impedance, also known as the effective or invariant impedance, is a rotationally invariant scalar quantity derived from the full $2 \times 2$ impedance tensor. It is defined as:
+
+\begin{equation}
+Z_{\text{det}}(\omega) = \sqrt{Z_{xy}(\omega) \cdot Z_{yx}(\omega) - Z_{xx}(\omega) \cdot Z_{yy}(\omega)}
+\end{equation}
+
+This expression is the square root of the determinant of the impedance tensor matrix, hence the name ``determinant impedance.'' Its key property is rotational invariance: the value of $Z_{\text{det}}$ does not change when the impedance tensor is rotated to a different coordinate system. This makes $Z_{\text{det}}$ independent of the measurement axis orientation and therefore insensitive to the choice of deployment geometry --- a particularly valuable property when comparing data from stations deployed with different orientations or when the geoelectric strike direction is unknown.
+
+The determinant apparent resistivity and phase are computed from $Z_{\text{det}}$ using the standard formulae:
+
+\begin{equation}
+\rho_{\text{det}}(\omega) = \frac{|Z_{\text{det}}(\omega)|^2}{\mu_0 \omega}
+\end{equation}
+
+\begin{equation}
+\phi_{\text{det}}(\omega) = \arctan\left(\frac{\text{Im}(Z_{\text{det}}(\omega))}{\text{Re}(Z_{\text{det}}(\omega))}\right)
+\end{equation}
+
+For a 1D Earth, where $Z_{xx} = Z_{yy} = 0$ and $Z_{xy} = -Z_{yx}$, the determinant reduces to $Z_{\text{det}} = \sqrt{-Z_{xy}^2} = |Z_{xy}|$, and the determinant apparent resistivity equals the individual component apparent resistivity. For a 2D or 3D Earth, the determinant provides an ``average'' impedance that represents a compromise between the different tensor components, making it a useful single-quantity descriptor for stations where the 1D approximation is approximately valid.
+
+In this study, the determinant impedance was computed for all stations classified as 1D-like by the skew analysis. The resulting determinant apparent resistivity curves were used for quality control, visual assessment of data quality, and selection of the final 24 stations for inversion. The determinant curves were plotted as log-log sounding curves (period versus apparent resistivity) and inspected for smoothness, adequate period bandwidth, and the absence of anomalous features.
+
+\subsection{EDI (Electrical Data Interchange) Format}
+
+The Electrical Data Interchange (EDI) format is the industry-standard file format for storing and exchanging magnetotelluric transfer function data, developed under the auspices of the Society of Exploration Geophysicists (SEG). The EDI format uses a structured, human-readable ASCII text layout with clearly delineated sections, making it both machine-parseable and amenable to manual inspection.
+
+A typical EDI file is organized into the following main sections:
+
+\begin{itemize}
+    \item \textbf{\texttt{>HEAD}:} Contains metadata about the station, including the \texttt{DATAID} (station identifier), \texttt{ACQBY} (acquiring organization), \texttt{FILEBY} (file creator), \texttt{ACQDATE} (acquisition date), and geographic coordinates (\texttt{LAT}, \texttt{LONG}, \texttt{ELEV}). Geographic coordinates may be specified in decimal degrees or in degrees:minutes:seconds (DMS) format, depending on the data provider. The parsing of coordinates from EDI files requires handling both formats, which was implemented in the Python preprocessing pipeline of this study.
+
+    \item \texttt{>INFO}: Contains free-form text describing the survey, processing parameters, and other relevant information.
+
+    \item \texttt{>=DEFINEMEAS}: Defines the measurement channels (electric and magnetic), including sensor orientations, dipole lengths, and channel identifiers.
+
+    \item \texttt{>=MTSECT}: Specifies the MT section parameters, including the number of frequencies and the channel assignment for the impedance calculation.
+
+    \item \textbf{Data blocks:} The impedance tensor elements are provided as separate data blocks for the real and imaginary parts of each component ($Z_{xx}$, $Z_{xy}$, $Z_{yx}$, $Z_{yy}$), along with their associated variance or error estimates. Each block is preceded by a header line (e.g., \texttt{>ZXXR}, \texttt{>ZXXI}, \texttt{>ZXX.VAR}) and contains the data values at each frequency, separated by whitespace.
+\end{itemize}
+
+In this study, EDI files were read using the \texttt{mt\_metadata} Python library, which provides a \texttt{TF} (Transfer Function) class that abstracts the parsing details and provides convenient access to the impedance tensor data as complex-valued NumPy arrays, the associated error estimates, the period array, and station metadata. Additional custom parsing routines were developed to handle formatting inconsistencies encountered in the SAMTEX EDI files, including the sanitization of asterisk-encoded null values and the handling of different latitude/longitude coordinate formats.
+
+\subsection{Bayesian Inversion}
+
+Bayesian inversion is a probabilistic framework for solving inverse problems that treats the model parameters as random variables characterized by probability distributions, rather than as fixed unknowns to be determined. This paradigm shift from the deterministic to the probabilistic view has profound implications for the interpretation of geophysical data, as it provides a principled mechanism for quantifying uncertainty, incorporating prior knowledge, and addressing the non-uniqueness inherent in most geophysical inverse problems.
+
+The mathematical foundation of Bayesian inversion is Bayes' theorem, which relates the posterior probability distribution of the model parameters $\mathbf{m}$ given the observed data $\mathbf{d}$ to the likelihood function, the prior distribution, and the evidence:
+
+\begin{equation}
+p(\mathbf{m} | \mathbf{d}) = \frac{p(\mathbf{d} | \mathbf{m}) \cdot p(\mathbf{m})}{p(\mathbf{d})}
+\end{equation}
+
+The components of this equation are:
+
+\begin{itemize}
+    \item \textbf{Posterior distribution $p(\mathbf{m} | \mathbf{d})$:} The probability distribution of the model parameters given the observed data. This is the quantity of primary interest, as it encapsulates everything we know about the model after considering both the data and the prior information. The posterior distribution is typically high-dimensional and analytically intractable, necessitating numerical sampling techniques.
+
+    \item \textbf{Likelihood function $p(\mathbf{d} | \mathbf{m})$:} The probability of observing the data $\mathbf{d}$ given a particular model $\mathbf{m}$. The likelihood quantifies the goodness-of-fit between the model predictions (obtained by solving the forward problem) and the observed data, weighted by the data uncertainties. For Gaussian-distributed data errors, the negative log-likelihood is proportional to the weighted sum of squared residuals (the chi-squared statistic). In this study, the likelihood for complex impedance data $Z$ is computed as:
+    \begin{equation}
+    -\log p(\mathbf{d}|\mathbf{m}) \propto \sum_{i=1}^{N} \frac{|Z_i^{\text{obs}} - Z_i^{\text{pred}}(\mathbf{m})|^2}{\sigma_i^2}
+    \end{equation}
+    where $Z_i^{\text{obs}}$ and $Z_i^{\text{pred}}$ are the observed and predicted complex impedances at the $i$-th period, $\sigma_i$ is the data error, and $N$ is the number of data points.
+
+    \item \textbf{Prior distribution $p(\mathbf{m})$:} The probability distribution of the model parameters before considering the data, encoding any pre-existing knowledge or beliefs about the model. In the absence of specific geological information, uninformative (flat) priors are commonly used. In this study, uniform priors were adopted for both resistivity ($\log_{10}\rho \in [-1, 5]$, corresponding to $0.1$--$100{,}000$ $\Omega$m) and layer interface depths ($\log_{10}z \in [\log_{10}10, \log_{10}350{,}000]$, corresponding to 10 m to 350 km).
+
+    \item \textbf{Evidence $p(\mathbf{d})$:} A normalizing constant that ensures the posterior integrates to unity. It is computed as the integral of the likelihood times the prior over the entire model space: $p(\mathbf{d}) = \int p(\mathbf{d}|\mathbf{m}) p(\mathbf{m}) d\mathbf{m}$. While the evidence is important for formal model comparison, it does not need to be computed for MCMC sampling, as the sampling depends only on the ratio of posterior probabilities.
+\end{itemize}
+
+In contrast to deterministic inversions, which produce a single model (typically the maximum a posteriori or regularized least-squares solution), Bayesian inversion produces an ensemble of models sampled from the posterior distribution. From this ensemble, one can compute summary statistics such as the posterior mean, median, mode, and percentile-based credible intervals (e.g., 5th--95th percentile bounds) at each depth, providing a complete picture of both the most likely subsurface structure and the associated uncertainty.
+
+\subsection{Trans-dimensional MCMC}
+
+Trans-dimensional Markov Chain Monte Carlo (MCMC) is a class of MCMC algorithms that extends the standard Metropolis-Hastings framework to allow the dimensionality of the model --- that is, the number of model parameters --- to vary during the sampling process. In the context of 1D geophysical inversion, trans-dimensional MCMC is most commonly used to infer layered Earth models in which the number of layers $k$ is itself an unknown parameter, alongside the layer properties (thicknesses and physical property values).
+
+The theoretical foundation for trans-dimensional MCMC is the reversible-jump MCMC (rjMCMC) algorithm introduced by Green (1995). The rjMCMC algorithm generalizes the Metropolis-Hastings algorithm by defining ``dimension-changing'' moves that propose transitions between model spaces of different dimensionality. In the context of 1D Earth modelling, these moves include:
+
+\begin{itemize}
+    \item \textbf{Birth move:} A new layer interface is proposed at a randomly chosen depth within the allowed range, creating a new layer with a randomly assigned resistivity value. The model dimension increases by one. In the implementation used in this study, the birth depth is drawn uniformly in $\log_{10}(z)$ space, and a minimum layer thickness constraint of 1{,}000 m is enforced to prevent the creation of physically unrealistic ultra-thin layers. The resistivity of the new layer is drawn from the prior distribution (uniform in $\log_{10}\rho$), following the ``prior'' kernel approach.
+
+    \item \textbf{Death move:} An existing layer interface (other than the surface) is randomly selected and removed, merging the layer with the one above it. The model dimension decreases by one. The death move is the reverse of the birth move, and the acceptance probability is designed to ensure detailed balance with the birth move.
+
+    \item \textbf{Move:} An existing layer interface is randomly selected and perturbed to a new depth by adding a Gaussian perturbation. The model dimension remains unchanged. A minimum layer thickness constraint is enforced.
+
+    \item \textbf{Value change (resistivity perturbation):} A randomly selected layer's resistivity is perturbed by adding a Gaussian perturbation in $\log_{10}(\rho)$ space. The model dimension remains unchanged.
+
+    \item \textbf{Noise change:} The data error scaling factor (hyperparameter $\sigma$) is perturbed, allowing the inversion to hierarchically estimate the appropriate noise level.
+\end{itemize}
+
+The selection among these move types at each iteration is governed by a set of proposal probabilities. In this study, the probabilities were set to approximately 10\% birth, 40\% death, 16\% move, 34\% value change, with noise change moves occurring at a lower rate. This balance ensures that the sampler spends most of its time refining the model parameters (through move and value change operations) while occasionally adjusting the model complexity (through birth and death operations).
+
+The acceptance probability for each proposed move follows the generalized Metropolis-Hastings-Green criterion, which accounts for the change in likelihood, the prior probability ratio, and the Jacobian of the dimension-matching transformation. For birth and death moves, the acceptance probability includes terms that account for the change in model dimension, ensuring that the sampler satisfies detailed balance and converges to the correct posterior distribution. When using the prior kernel (as in this study), the birth proposal draws the new resistivity from the prior, and the Jacobian contribution simplifies to unity.
+
+A key advantage of the trans-dimensional approach is its inherent implementation of the principle of parsimony (Occam's razor). The trans-dimensional prior naturally penalizes models with more parameters, because the prior probability of each parameter configuration decreases as the number of parameters increases (the prior density is ``spread more thinly'' over a larger parameter space). Consequently, models with more layers are accepted only if they provide a sufficiently better fit to the data to offset the prior penalty. This self-regularization avoids the need for ad hoc smoothness or minimum-norm regularization, producing models whose complexity is determined by the data themselves.
+
+\subsection{Parallel Tempering}
+
+Parallel tempering, also known as replica exchange MCMC or MCMC$^3$ (Metropolis-Coupled MCMC), is an enhanced sampling strategy that addresses one of the most significant practical challenges in MCMC sampling: the tendency of the Markov chain to become trapped in local modes of the posterior distribution, particularly in high-dimensional or multimodal problems.
+
+The core idea of parallel tempering is to run multiple MCMC chains simultaneously, each sampling from a modified version of the target distribution. Specifically, the $i$-th chain samples from the ``tempered'' distribution:
+
+\begin{equation}
+p_i(\mathbf{m} | \mathbf{d}) \propto p(\mathbf{d} | \mathbf{m})^{1/T_i} \cdot p(\mathbf{m})
+\end{equation}
+
+\noindent where $T_i$ is the ``temperature'' of the $i$-th chain, with $T_1 = 1$ (the ``cold'' chain, sampling the true posterior) and $T_i > 1$ for ``hot'' chains. The effect of increasing the temperature is to flatten the likelihood surface: at high temperatures, the difference in likelihood between good-fitting and poor-fitting models is reduced, allowing the chain to move more freely across the parameter space and traverse energy barriers between local modes.
+
+Periodically, adjacent chains (or, more generally, pairs of chains at different temperatures) propose to swap their current states. The swap between chains $i$ and $j$ (with temperatures $T_i$ and $T_j$ and current likelihoods $L_i$ and $L_j$) is accepted with probability:
+
+\begin{equation}
+\alpha_{\text{swap}} = \min\left[1, \exp\left(\left(\frac{1}{T_i} - \frac{1}{T_j}\right)(L_j - L_i)\right)\right]
+\end{equation}
+
+This swap mechanism ensures detailed balance across the extended state space and allows solutions discovered by the high-temperature chains (which explore more broadly) to propagate to the cold chain (which samples the posterior accurately). The result is improved mixing, faster convergence, and better exploration of multimodal distributions.
+
+In the implementation used in this study, two chains were run at temperatures $T = [1, 1]$ (both at the target temperature), representing a minimal parallel tempering configuration focused on generating two independent samples of the posterior. The code also supports configurations with elevated temperatures (e.g., $T = [1, 1, 1.2, 2.0, 5]$) for problems where multimodality is more severe, though this was not required for the 1D MT inversions performed in this study. Three types of swap strategies are implemented: (i) random selection of one cold and one warm chain (jumptype = 0), (ii) systematic pairwise swaps between all chain pairs (jumptype = 1), and (iii) nearest-temperature swaps (jumptype = 2).
+
+\subsection{ModEM (Modular Electromagnetic Inversion)}
+
+ModEM (Modular Electromagnetic) is an open-source, community-standard software package for the forward modelling and inversion of electromagnetic geophysical data in three dimensions. Originally developed by Egbert and Kelbert (2012) and subsequently extended by the community, ModEM has become one of the most widely used codes for 3D MT inversion worldwide, owing to its modular architecture, computational efficiency, and demonstrated capability for handling large-scale problems.
+
+The ModEM forward solver computes the electromagnetic response of a 3D resistivity model using the finite-difference method on a staggered Yee grid. The model domain is discretized into a regular (or variable-spacing) rectilinear grid of cells, each assigned a constant resistivity value. The electromagnetic fields are computed by solving Maxwell's equations in the frequency domain, subject to appropriate boundary conditions, using iterative sparse matrix solvers.
+
+The ModEM inversion algorithm employs a regularized, gradient-based optimization approach to minimize an objective function that combines data misfit (the weighted sum of squared residuals between observed and predicted data) and model regularization (a smoothness or minimum-norm penalty on the model parameters):
+
+\begin{equation}
+\Phi(\mathbf{m}) = \Phi_d(\mathbf{m}) + \lambda \Phi_m(\mathbf{m}) = |\mathbf{W}_d (\mathbf{d}_{\text{obs}} - \mathbf{d}_{\text{pred}}(\mathbf{m}))|^2 + \lambda |\mathbf{W}_m (\mathbf{m} - \mathbf{m}_{\text{ref}})|^2
+\end{equation}
+
+\noindent where $\mathbf{W}_d$ and $\mathbf{W}_m$ are data and model weighting matrices, $\mathbf{m}_{\text{ref}}$ is a reference model, and $\lambda$ is the regularization parameter (trade-off parameter) that controls the balance between data fit and model smoothness. The inversion iteratively updates the model using either the nonlinear conjugate gradient (NLCG) method or the Gauss-Newton method, with the gradient computed efficiently using the adjoint method.
+
+The ModEM model file format stores the 3D resistivity model as $\log_{10}(\rho)$ values on the finite-difference grid, along with header information specifying the grid dimensions ($n_x$, $n_y$, $n_z$) and cell sizes ($\Delta x$, $\Delta y$, $\Delta z$). In this study, the SA2022 ModEM 3D model of southern Africa was used as an independent benchmark. One-dimensional resistivity-depth profiles were extracted from the 3D model by identifying the grid cell nearest to each station's geographic coordinates (using Euclidean distance in the latitude-longitude plane) and reading the column of $\log_{10}(\rho)$ values at that ($x$, $y$) location across all depth layers. These extracted profiles were then compared with the Bayesian 1D inversion results, with the comparison limited to depths $\leq 350$ km to match the depth range of the Bayesian parameterization.
+

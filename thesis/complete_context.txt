@@ -1,0 +1,2434 @@
+--------------------------------------------------------
+---------------------------------------------------------
+part 1 : filter real data and selecting best station for inversion
+---------------------------------------------------------
+---------------------------------------------------------
+
+1st ipynb file : 
+
+# %%
+import os
+import re
+import numpy as np
+import pandas as pd
+from mt_metadata.transfer_functions import TF
+
+# -----------------------------
+# Extract Site Name
+# -----------------------------
+def get_sitename(edi_path):
+    with open(edi_path, "r", errors="ignore") as f:
+        for line in f:
+            if "SITENAME" in line.upper():
+                return line.split("=")[1].strip().strip('"')
+    # fallback
+    return os.path.basename(edi_path).split(".")[0]
+
+
+# -----------------------------
+# Extract Lat / Lon (from HEAD)
+# Handles DMS or decimal
+# -----------------------------
+def extract_lat_lon(edi_path):
+    lat, lon = np.nan, np.nan
+
+    with open(edi_path, "r", errors="ignore") as f:
+        lines = f.readlines()
+
+    for line in lines:
+        L = line.strip().replace(" ", "").upper()
+
+        # LAT
+        if L.startswith("LAT=") or L.startswith(">LAT="):
+            val = L.split("=")[1]
+            lat = parse_lat_lon_value(val)
+
+        elif L.startswith("LAT"):
+            # LAT-23.45 or LAT-23:15:30 or LAT=-23.4
+            cleaned = line.upper().replace("LAT", "").replace("=", "").strip()
+            lat = parse_lat_lon_value(cleaned)
+
+        # LONG / LON
+        if L.startswith("LON=") or L.startswith("LONG=") or L.startswith(">LONG="):
+            val = L.split("=")[1]
+            lon = parse_lat_lon_value(val)
+
+        elif L.startswith("LON") or L.startswith("LONG"):
+            cleaned = line.upper().replace("LONG", "").replace("LON", "").replace("=", "").strip()
+            lon = parse_lat_lon_value(cleaned)
+
+    return lat, lon
+
+
+
+# -----------------------------
+# Parse helper for DMS/Decimal
+# -----------------------------
+def parse_lat_lon_value(value):
+    """
+    Converts value such as:
+    - "23:12:30" → decimal degrees
+    - "-17.3456" → decimal degrees
+    """
+    try:
+        # If decimal
+        if ":" not in value:
+            return float(value)
+
+        # If DMS
+        parts = value.split(":")
+        deg = float(parts[0])
+        minute = float(parts[1])
+        sec = float(parts[2])
+        sign = -1 if deg < 0 else 1
+        return sign * (abs(deg) + minute/60 + sec/3600)
+
+    except:
+        return np.nan
+
+
+# -----------------------------
+# Sanitize EDI (your function)
+# -----------------------------
+def sanitize_edi(edi_path):
+    with open(edi_path, "r", errors="ignore") as f:
+        lines = f.readlines()
+
+    cleaned = []
+    for line in lines:
+        if line.strip().startswith(">!"):
+            cleaned.append(line)
+            continue
+
+        line = re.sub(r"\*+", " -9999 ", line)
+        line = re.sub(r"(?<![0-9eE\+\-])0\.0(?![0-9eE\+\-])", " -9999 ", line)
+
+        cleaned.append(line)
+
+    return "".join(cleaned)
+
+
+# -----------------------------
+# Compute Swift Skew
+# -----------------------------
+def compute_skew(edi_path):
+    try:
+        txt = sanitize_edi(edi_path)
+        tmpfile = "./output/temp_files/_tmp_clean.edi"
+        with open(tmpfile, "w", errors="ignore") as f:
+            f.write(txt)
+
+        tf = TF()
+        tf.read(fn=tmpfile)
+
+        Z = np.array(tf.impedance.data, dtype=float)
+        Z[Z == -9999] = np.nan
+
+        Zxx = Z[:, 0, 0]
+        Zxy = Z[:, 0, 1]
+        Zyx = Z[:, 1, 0]
+        Zyy = Z[:, 1, 1]
+
+        skew = np.abs(Zxx + Zyy) / np.abs(Zxy - Zyx)
+        skew = skew[np.isfinite(skew)]
+
+        return np.nanmean(skew) if len(skew) > 0 else np.nan
+
+    except Exception:
+        return np.nan
+
+
+# -----------------------------
+# MAIN LOOP: Read all EDIs
+# -----------------------------
+folder = "../data/all_station_EDI_data"
+
+records = []
+
+for fname in os.listdir(folder):
+    if fname.lower().endswith(".edi"):
+        path = os.path.join(folder, fname)
+
+        site = get_sitename(path)
+        skew_val = compute_skew(path)
+        lat, lon = extract_lat_lon(path)
+
+        records.append((site, fname, skew_val, lat, lon))
+
+
+# -----------------------------
+# Build DataFrame
+# -----------------------------
+df = pd.DataFrame(records, columns=["Site", "File", "Skew", "Lat", "Lon"])
+
+# 1D classification
+df["Is1D"] = df["Skew"] < 0.5
+
+# Sort by skew for clarity
+df = df.sort_values("Skew", ascending=True).reset_index(drop=True)
+
+print(df.to_string(index=False))
+
+df.to_csv("./output/csv/all_csv_files/each_file_skew_classification.csv", index=False)
+print("\nSaved: each_file_skew_classification.csv with Lat/Lon\n")
+
+
+# %%
+import numpy as np
+import pandas as pd
+
+# ---------------------------------------
+# BUILD BINS: 0–0.20 with step 0.01; after 0.20 with step 0.1 up to 2.0; add -inf and +inf
+# ---------------------------------------
+low_bins = np.round(np.arange(0.00, 0.21, 0.01), 2)   # 0.00, 0.01, ..., 0.20 (length 21)
+high_bins = np.round(np.arange(0.2, 2.1, 0.1), 2)     # 0.2, 0.3, ..., 2.0 (length 19)
+
+# combine edges:
+# [-inf, 0.00, 0.01, ..., 0.20, 0.30, 0.40, ..., 2.0, +inf]
+edges = [-np.inf] + list(low_bins) + list(high_bins[1:]) + [np.inf]
+
+# ---------------------------------------
+# GENERATE LABELS — must be len(edges)-1
+# ---------------------------------------
+labels = []
+
+# label for values below 0.00
+labels.append("< 0.00")
+
+# labels for 0.00–0.20 (0.01 step)
+for i in range(len(low_bins) - 1):
+    a = low_bins[i]
+    b = low_bins[i + 1]
+    labels.append(f"{a:.2f}–{b:.2f}")
+
+# labels for 0.20–2.0 (0.1 step)
+for i in range(len(high_bins) - 1):
+    a = high_bins[i]
+    b = high_bins[i + 1]
+    labels.append(f"{a:.1f}–{b:.1f}")
+
+# final label for > 2.0
+labels.append("> 2.0")
+
+# check lengths
+assert len(labels) == len(edges) - 1, f"labels {len(labels)} != bins-1 {len(edges)-1}"
+
+# ---------------------------------------
+# APPLY TO DF (assumes df exists and df['Skew'] present)
+# ---------------------------------------
+df["SkewRange"] = pd.cut(df["Skew"], bins=edges, labels=labels, right=True)
+
+freq_table = df["SkewRange"].value_counts().sort_index()
+
+print("\nSkew Frequency Distribution:")
+for label, count in freq_table.items():
+    print(f"{label} = {count} stations")
+
+
+# %%
+# ---------------------------------------
+# STATION-LEVEL SUMMARY (PER EDI FILE)
+# ---------------------------------------
+
+total_stations = len(df)
+total_1d_like_stations = (df["Skew"] < 0.2).sum()
+total_rejected_stations = total_stations - total_1d_like_stations
+
+print("\nStation Summary:")
+print("Total Stations:", total_stations)
+print("Total 1D-like Stations:", total_1d_like_stations)
+print("Total Rejected Stations:", total_rejected_stations)
+
+
+# %%
+import re
+import numpy as np
+import matplotlib.pyplot as plt
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+
+# ----------------------------------------------------
+# EXTRACT LAT / LONG FOR EACH STATION (EACH EDI FILE)
+# ----------------------------------------------------
+def extract_lat_lon(edi_path):
+
+    def dms_to_dd(dms):
+        try:
+            sign = -1 if dms.strip().startswith("-") else 1
+            parts = dms.replace("-", "").split(":")
+            deg, minutes, seconds = map(float, parts)
+            return sign * (deg + minutes/60 + seconds/3600)
+        except:
+            return np.nan
+
+    lat, lon = np.nan, np.nan
+
+    with open(edi_path, "r", errors="ignore") as f:
+        for line in f:
+            if line.strip().startswith("LAT="):
+                lat = dms_to_dd(line.split("=")[1].strip())
+            if line.strip().startswith("LONG="):
+                lon = dms_to_dd(line.split("=")[1].strip())
+
+    return lat, lon
+
+
+# ----------------------------------------------------
+# BUILD TABLE: station-level (each EDI file)
+# ----------------------------------------------------
+records_with_geo = []
+
+for idx, row in df.iterrows():
+    fname = row["File"]
+    path = os.path.join(folder, fname)
+
+    lat, lon = extract_lat_lon(path)
+    records_with_geo.append((row["Site"], fname, row["Skew"], lat, lon))
+
+geo_df = pd.DataFrame(records_with_geo,
+                      columns=["Site", "File", "Skew", "Lat", "Lon"])
+
+# classification
+geo_df["Is1D"] = geo_df["Skew"] < 0.2
+
+good_stations = geo_df[geo_df["Is1D"] == True]
+bad_stations  = geo_df[geo_df["Is1D"] == False]
+
+
+# ----------------------------------------------------
+# MAP TEMPLATE FUNCTION
+# ----------------------------------------------------
+def setup_map(title):
+    plt.figure(figsize=(10, 10))
+    ax = plt.axes(projection=ccrs.PlateCarree())
+    ax.set_extent([10, 40, -35, -12])    # Southern Africa
+
+    ax.add_feature(cfeature.LAND)
+    ax.add_feature(cfeature.OCEAN)
+    ax.add_feature(cfeature.BORDERS, linestyle=':')
+    ax.add_feature(cfeature.COASTLINE)
+    ax.add_feature(cfeature.LAKES, alpha=0.5)
+    ax.add_feature(cfeature.RIVERS)
+
+    gl = ax.gridlines(draw_labels=True,
+                      linewidth=0.7,
+                      linestyle='--',
+                      color='gray')
+
+    gl.top_labels = True
+    gl.bottom_labels = True
+    gl.left_labels = True
+    gl.right_labels = True
+
+    gl.xlabel_style = {'size': 9}
+    gl.ylabel_style = {'size': 9}
+
+    plt.title(title, fontsize=16)
+    return ax
+
+
+# ----------------------------------------------------
+# IMAGE 1: ALL STATIONS (ALL .edi FILES)
+# ----------------------------------------------------
+ax = setup_map("All MT Stations (All .edi Files)")
+for _, row in geo_df.iterrows():
+    ax.plot(row["Lon"], row["Lat"],
+            'k.', markersize=3,
+            transform=ccrs.PlateCarree())
+plt.show()
+
+
+# ----------------------------------------------------
+# IMAGE 2: ONLY 1D-LIKE STATIONS
+# ----------------------------------------------------
+ax = setup_map("1D-Like MT Stations (Skew < 0.2)")
+for _, row in good_stations.iterrows():
+    ax.plot(row["Lon"], row["Lat"],
+            'bo', markersize=3,
+            transform=ccrs.PlateCarree())
+plt.show()
+
+
+# ----------------------------------------------------
+# IMAGE 3: ALL STATIONS, 1D VS NON-1D
+# ----------------------------------------------------
+ax = setup_map("All Stations: 1D-like vs Non-1D")
+
+# Plot 1D-like (blue circles)
+for _, row in good_stations.iterrows():
+    ax.plot(row["Lon"], row["Lat"],
+            marker='o',
+            markersize=4,
+            color='blue',
+            transform=ccrs.PlateCarree())
+
+# Plot non-1D (red crosses)
+for _, row in bad_stations.iterrows():
+    ax.plot(row["Lon"], row["Lat"],
+            marker='x',
+            markersize=5,
+            color='red',
+            transform=ccrs.PlateCarree())
+
+plt.show()
+
+
+# %%
+import matplotlib.cm as cm
+import matplotlib.colors as mcolors
+
+# ----------------------------------------------------
+# FILTER ONLY 1D-LIKE STATIONS
+# ----------------------------------------------------
+good_stations = geo_df[geo_df["Skew"] < 0.2].copy()
+good_sites = sorted(good_stations["Site"].unique())
+
+# ----------------------------------------------------
+# USE DARK, HIGH-CONTRAST NAMED COLORS
+# ----------------------------------------------------
+named_colors = list(mcolors.TABLEAU_COLORS.keys())  
+num_colors = len(named_colors)
+
+repeat_factor = int(np.ceil(len(good_sites) / num_colors))
+final_named_colors = (named_colors * repeat_factor)[:len(good_sites)]
+
+site_color_map = dict(zip(good_sites, final_named_colors))
+
+# convert names → actual color values for plotting
+site_plot_color = {s: mcolors.TABLEAU_COLORS[c] for s, c in site_color_map.items()}
+
+# ----------------------------------------------------
+# PLOT MAP
+# ----------------------------------------------------
+plt.figure(figsize=(10, 10))
+ax = plt.axes(projection=ccrs.PlateCarree())
+ax.set_extent([10, 40, -35, -12])
+
+ax.add_feature(cfeature.LAND)
+ax.add_feature(cfeature.OCEAN)
+ax.add_feature(cfeature.BORDERS, linestyle=':')
+ax.add_feature(cfeature.COASTLINE)
+ax.add_feature(cfeature.LAKES, alpha=0.2)
+ax.add_feature(cfeature.RIVERS)
+
+# ----------------------------------------------------
+# PLOT ALL STATIONS ONLY (NO CENTER HIGHLIGHT)
+# ----------------------------------------------------
+for _, row in good_stations.iterrows():
+    site = row["Site"]
+    color = site_plot_color[site]
+
+    ax.plot(
+        row["Lon"], row["Lat"],
+        marker="o",
+        markersize=4,
+        color=color,
+        transform=ccrs.PlateCarree(),
+    )
+
+plt.title("1D-Like MT Stations Colored by Site (Skew < 0.2)", fontsize=15)
+plt.show()
+
+# ----------------------------------------------------
+# LEGEND PRINT
+# ----------------------------------------------------
+print("\nColor Name → Site Mapping:")
+for site, color_name in site_color_map.items():
+    print(f"{site} : {color_name}")
+
+
+
+2nd ipynb file : 
+
+# %%
+import geopandas as gpd
+import pandas as pd
+from shapely.geometry import Point
+import os
+
+# --------------------------------------------------
+# Load station CSV (already created by you)
+# --------------------------------------------------
+df = pd.read_csv("./output/csv/all_csv_files/each_file_skew_classification.csv")
+
+# convert to GeoDataFrame
+geometry = [Point(lon, lat) for lon, lat in zip(df.Lon, df.Lat)]
+gdf_stations = gpd.GeoDataFrame(df, geometry=geometry, crs="EPSG:4326")
+
+# --------------------------------------------------
+# Load tectonic unit shapefiles
+# --------------------------------------------------
+TECTONIC_DIR = "../data/mccourt_2013_tectonic_units"
+
+unit_files = {
+    "archean": "archaean.shp",
+    "paleoproterozoic_shields": "paleoproterozoic_shields.shp",
+    "paleoproterozoic_belts": "paleoproterozoic_belts.shp",
+    "mesoproterozoic_belts": "mesoproterozoic_belts.shp",
+    "neoproterozoic": "neoproterozoic.shp",
+    "limpopo": "limpopo.shp"
+}
+
+# initialize column
+gdf_stations["Tectonic_Unit"] = "unknown"
+
+# --------------------------------------------------
+# Spatial join manually (unit by unit)
+# --------------------------------------------------
+for unit, shp in unit_files.items():
+    path = os.path.join(TECTONIC_DIR, shp)
+    if not os.path.exists(path):
+        print(f"Missing {path}")
+        continue
+
+    gdf_unit = gpd.read_file(path)
+
+    # ensure same CRS
+    if gdf_unit.crs != gdf_stations.crs:
+        gdf_unit = gdf_unit.to_crs(gdf_stations.crs)
+
+    # spatial join
+    joined = gpd.sjoin(
+        gdf_stations,
+        gdf_unit,
+        how="left",
+        predicate="within"
+    )
+
+    # assign tectonic unit where matched
+    mask = joined.index_right.notna()
+    gdf_stations.loc[mask, "Tectonic_Unit"] = unit
+
+# --------------------------------------------------
+# Save final table
+# --------------------------------------------------
+out = "./output/csv/all_csv_files/each_file_skew_classification_with_units.csv"
+gdf_stations.drop(columns="geometry").to_csv(out, index=False)
+
+print("Saved", out)
+print(gdf_stations["Tectonic_Unit"].value_counts())
+
+
+# %%
+import os, re, numpy as np, pandas as pd
+from mt_metadata.transfer_functions import TF
+
+mu0 = 4*np.pi*1e-7
+
+# -------------------------------
+# Load 1D sites
+# -------------------------------
+skew_df = pd.read_csv("./output/csv/all_csv_files/each_file_skew_classification_with_units.csv")
+
+good_sites = set(skew_df.loc[skew_df.Is1D, "Site"])
+
+print("Total 1D sites:", len(good_sites))
+
+# -------------------------------
+# Clean output directory FIRST
+# -------------------------------
+outdir = "./output/csv/all_csv_files/determinant_per_station"
+os.makedirs(outdir, exist_ok=True)
+
+for f in os.listdir(outdir):
+    if f.endswith(".csv"):
+        os.remove(os.path.join(outdir, f))
+
+print("Old determinant files removed")
+
+# -------------------------------
+# Helpers
+# -------------------------------
+def sanitize(path):
+    with open(path,"r",errors="ignore") as f:
+        lines = f.readlines()
+    out=[]
+    for l in lines:
+        if l.strip().startswith(">!"):
+            out.append(l); continue
+        l=re.sub(r"\*+"," -9999 ",l)
+        l=re.sub(r"(?<![0-9eE+\-])0\.0(?![0-9eE+\-])"," -9999 ",l)
+        out.append(l)
+    return "".join(out)
+
+def read_tf(path):
+    with open("./output/temp_files/_tmp.edi","w") as f:
+        f.write(sanitize(path))
+    tf = TF()
+    tf.read("./output/temp_files/_tmp.edi")
+    return tf
+
+# -------------------------------
+# Compute determinant ONLY for 1D
+# -------------------------------
+edi_folder = "../data/all_station_EDI_data"
+count = 0
+
+for f in sorted(os.listdir(edi_folder)):
+    if not f.lower().endswith(".edi"):
+        continue
+
+    site = f.replace(".edi","")
+    if site not in good_sites:
+        continue
+
+    tf = read_tf(os.path.join(edi_folder, f))
+    Z = np.array(tf.impedance.data, complex)
+    periods = np.array(tf.period.data, float)
+
+    Zdet = np.sqrt(Z[:,0,1]*Z[:,1,0] - Z[:,0,0]*Z[:,1,1])
+    omega = 2*np.pi/periods
+    rho = (np.abs(Zdet)**2 / (mu0 * omega)) * 1e-6
+    phase = np.angle(Zdet, deg=True)
+
+    pd.DataFrame({
+        "period_s": periods,
+        "rho_det": rho,
+        "phase_det_deg": phase
+    }).to_csv(f"{outdir}/{site}_det.csv", index=False)
+
+    count += 1
+
+print("Determinant computed for", count, "1D sites only")
+
+
+# %%
+import glob, pandas as pd
+
+files = glob.glob("./output/csv/all_csv_files/determinant_per_station/*_det.csv")
+print("Determinant files:", len(files))
+
+skew_df = pd.read_csv("./output/csv/all_csv_files/each_file_skew_classification.csv")
+print("1D sites:", (skew_df.Is1D==True).sum())
+
+
+# %%
+# 04_qc_plot_and_compute_slope.py
+import os, glob, numpy as np, pandas as pd
+import matplotlib.pyplot as plt
+
+PER_STATION_DIR = "./output/csv/all_csv_files/determinant_per_station"
+station_csvs = sorted(glob.glob(os.path.join(PER_STATION_DIR,"*_det.csv")))
+
+# quick grid plot
+def plot_grid(csv_files, ncols=6, max_plots=24, save_png="./output/images/all images/qc_grid.png"):
+    n = min(len(csv_files), max_plots)
+    nrows = int(np.ceil(n/ncols))
+    fig = plt.figure(figsize=(4*ncols,3*nrows))
+    for i,f in enumerate(csv_files[:n]):
+        df = pd.read_csv(f)
+        periods = df['period_s']; rho = df['rho_det']
+        ax = fig.add_subplot(nrows,ncols,i+1)
+        ax.loglog(periods, rho, marker='o', markersize=3, linestyle='-')
+        ax.set_title(os.path.basename(f).replace("_det.csv",""), fontsize=8)
+        ax.grid(True, which='both', lw=0.4, ls='--', alpha=0.5)
+        ax.tick_params(axis='both', labelsize=7)
+    plt.tight_layout(); fig.savefig(save_png, dpi=200)
+    print("Saved QC grid to", save_png)
+
+def compute_slope_midband(periods, rho, pmin=1, pmax=100):
+    mask = (periods>=pmin) & (periods<=pmax) & np.isfinite(rho)
+    if mask.sum() < 4: return np.nan
+    x = np.log10(periods[mask]); y = np.log10(rho[mask])
+    return float(np.polyfit(x,y,1)[0])
+
+plot_grid(station_csvs, ncols=6, max_plots=24)
+
+# compute slopes and add to summary
+summary = pd.read_csv("./output/csv/all_csv_files/determinant_station_summary_for_QGIS.csv")
+slopes = []
+for f in station_csvs:
+    site = os.path.basename(f).replace("_det.csv","").replace("_"," ").strip()
+    df = pd.read_csv(f)
+    s = compute_slope_midband(df['period_s'].values, df['rho_det'].values)
+    slopes.append((site,s))
+sdf = pd.DataFrame(slopes, columns=["Site","Slope_mid_1_100s"])
+outdf = summary.merge(sdf, on="Site", how="left")
+outdf.to_csv("./output/csv/all_csv_files/determinant_station_summary_with_slope.csv", index=False)
+print("Wrote determinant_station_summary_with_slope.csv")
+
+
+# %%
+# qc_plots_by_tectonic_unit.py
+# Final, clean, and safe version
+
+import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# ----------------------------------
+# INPUT PATHS
+# ----------------------------------
+INFO_CSV = "./output/csv/all_csv_files/each_file_skew_classification_with_units.csv"
+DET_DIR = "./output/csv/all_csv_files/determinant_per_station"
+OUT_DIR = "./output/images/all images/qc_plots_by_unit"
+
+os.makedirs(OUT_DIR, exist_ok=True)
+
+# ----------------------------------
+# LOAD METADATA
+# ----------------------------------
+info = pd.read_csv(INFO_CSV)
+
+# clean strings (VERY IMPORTANT)
+info["Site"] = info["Site"].astype(str).str.strip()
+info["Tectonic_Unit"] = info["Tectonic_Unit"].astype(str).str.strip()
+
+# keep only 1D stations
+info = info[info["Is1D"] == True]
+
+print("Total 1D stations:", len(info))
+
+# ----------------------------------
+# LOOP OVER TECTONIC UNITS
+# ----------------------------------
+for unit in sorted(info["Tectonic_Unit"].unique()):
+
+    unit_df = info[info["Tectonic_Unit"] == unit]
+
+    files = []
+    missing = []
+
+    for site in unit_df["Site"]:
+        f = os.path.join(DET_DIR, f"{site}_det.csv")
+        if os.path.exists(f):
+            files.append(f)
+        else:
+            missing.append(site)
+
+    # skip if no determinant files found
+    if not files:
+        print(f"[SKIPPED] {unit} → no determinant files")
+        continue
+
+    print(f"[PLOTTING] {unit} | files = {len(files)} | missing = {len(missing)}")
+
+    # ----------------------------------
+    # FIGURE LAYOUT
+    # ----------------------------------
+    ncols = 6
+    nrows = int(np.ceil(len(files) / ncols))
+
+    fig = plt.figure(figsize=(4 * ncols, 3 * nrows))
+
+    # ----------------------------------
+    # PLOT EACH STATION
+    # ----------------------------------
+    for i, f in enumerate(files):
+        df = pd.read_csv(f)
+
+        # safety check
+        if "period_s" not in df.columns or "rho_det" not in df.columns:
+            print(f"[BAD FILE] {f} → missing columns")
+            continue
+
+        ax = fig.add_subplot(nrows, ncols, i + 1)
+
+        ax.loglog(
+            df["period_s"],
+            df["rho_det"],
+            "o-",
+            markersize=2,
+            linewidth=0.8
+        )
+
+        ax.set_title(
+            os.path.basename(f).replace("_det.csv", ""),
+            fontsize=7
+        )
+
+        ax.grid(True, which="both", alpha=0.4)
+        ax.tick_params(labelsize=6)
+
+    # ----------------------------------
+    # TITLES & SAVE
+    # ----------------------------------
+    plt.suptitle(
+        f"Tectonic Unit: {unit}  (n = {len(files)})",
+        fontsize=14
+    )
+
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
+
+    # make filename safe
+    safe_unit = unit.replace(" ", "_").replace("/", "_")
+    out = os.path.join(OUT_DIR, f"qc_{safe_unit}.png")
+
+    plt.savefig(out, dpi=200)
+    plt.close()
+
+    print("Saved →", out)
+
+print("DONE")
+
+
+# %%
+import pandas as pd
+
+# ---------------------------
+# Your selected 24 stations
+# ---------------------------
+stations = [
+   # Archean
+    "SAMTEX.bot228.2005",
+    "SAMTEX.rtz401.2005",
+    "SAMTEX.kap067.2003",
+    "SAMTEX.bot407.2005",
+
+    # Limpopo
+    "SAMTEX.bot416.2005",
+    "SAMTEX.kal017.2008",
+    "SAMTEX.san006.2008",
+    "SAMTEX.san008.2008",
+
+    # Mesoproterozoic belts
+    "SAMTEX.kap010.2003",
+    "SAMTEX.zim128.2005",
+    "SAMTEX.mof102.2005",
+    "SAMTEX.NEN003.2006",
+
+    # Neoproterozoic
+    "SAMTEX.ELZ291A.2008",
+    "SAMTEX.dmb017.2006",
+    "SAMTEX.oka008.2006",
+    "SAMTEX.CPV027.2006",
+
+    # Paleoproterozoic belts
+    "SAMTEX.k2g006.2006",
+    "SAMTEX.mof107.2005",
+    "SAMTEX.san011.2008",
+    "SAMTEX.mak002.2006",
+
+    # Paleoproterozoic shields
+    "SAMTEX.kim422.2004",
+    "SAMTEX.kim432.2004",
+    "SAMTEX.kim435.2004",
+    "SAMTEX.rtz417.2005"
+]
+
+# ---------------------------
+# Load CSV
+# ---------------------------
+df = pd.read_csv("./output/csv/all_csv_files/each_file_skew_classification_with_units.csv")
+
+available_sites = set(df["Site"].astype(str))
+
+# ---------------------------
+# Check presence
+# ---------------------------
+present = []
+missing = []
+
+for s in stations:
+    if s in available_sites:
+        present.append(s)
+    else:
+        missing.append(s)
+
+# ---------------------------
+# Print results
+# ---------------------------
+print(f"Total selected stations: {len(stations)}")
+print(f"Present in CSV: {len(present)}")
+print(f"Missing from CSV: {len(missing)}")
+
+print("\nPresent stations:")
+for s in present:
+    print(" ", s)
+
+print("\nMissing stations:")
+for s in missing:
+    print(" ", s)
+
+
+# %%
+import pandas as pd
+
+# ---------------------------
+# Selected 24 stations
+# ---------------------------
+stations = [
+    # Archean
+    "SAMTEX.bot228.2005",
+    "SAMTEX.rtz401.2005",
+    "SAMTEX.kap067.2003",
+    "SAMTEX.bot407.2005",
+
+    # Limpopo
+    "SAMTEX.bot416.2005",
+    "SAMTEX.kal017.2008",
+    "SAMTEX.san006.2008",
+    "SAMTEX.san008.2008",
+
+    # Mesoproterozoic belts
+    "SAMTEX.kap010.2003",
+    "SAMTEX.zim128.2005",
+    "SAMTEX.mof102.2005",
+    "SAMTEX.NEN003.2006",
+
+    # Neoproterozoic
+    "SAMTEX.ELZ291A.2008",
+    "SAMTEX.dmb017.2006",
+    "SAMTEX.oka008.2006",
+    "SAMTEX.CPV027.2006",
+
+    # Paleoproterozoic belts
+    "SAMTEX.k2g006.2006",
+    "SAMTEX.mof107.2005",
+    "SAMTEX.san011.2008",
+    "SAMTEX.mak002.2006",
+
+    # Paleoproterozoic shields
+    "SAMTEX.kim422.2004",
+    "SAMTEX.kim432.2004",
+    "SAMTEX.kim435.2004",
+    "SAMTEX.rtz417.2005"
+]
+
+
+
+# ---------------------------
+# Load master table
+# ---------------------------
+df = pd.read_csv("./output/csv/all_csv_files/each_file_skew_classification_with_units.csv")
+
+# filter only selected stations
+selected_df = df[df["Site"].isin(stations)].copy()
+
+# safety check
+assert len(selected_df) == 24, f"Expected 24 stations, got {len(selected_df)}"
+
+# save
+selected_df.to_csv("./output/csv/all_csv_files/selected_24_stations.csv", index=False)
+
+print("Saved selected_24_stations.csv")
+print(selected_df[["Site", "Tectonic_Unit", "Lat", "Lon"]])
+
+
+# %%
+import os
+import pandas as pd
+import geopandas as gpd
+import matplotlib.pyplot as plt
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+from cartopy.feature import ShapelyFeature
+
+# ----------------------------------------------------
+# INPUT FILES
+# ----------------------------------------------------
+STATION_CSV = "./output/csv/all_csv_files/selected_24_stations.csv"
+TECTONIC_DIR = "../data/mccourt_2013_tectonic_units"
+
+# ----------------------------------------------------
+# MAP EXTENT (Southern Africa)
+# ----------------------------------------------------
+ZOOM_EXTENT = [10, 40, -35, -12]   # [lon_min, lon_max, lat_min, lat_max]
+
+# ----------------------------------------------------
+# LOAD SELECTED 24 STATIONS
+# ----------------------------------------------------
+stations = pd.read_csv(STATION_CSV)
+
+# ----------------------------------------------------
+# LOAD ALL TECTONIC SHAPEFILES AUTOMATICALLY
+# ----------------------------------------------------
+def load_all_shapefiles(directory, clip_extent):
+    layers = {}
+
+    for file in os.listdir(directory):
+        if file.lower().endswith(".shp"):
+            name = file.replace(".shp", "")
+            path = os.path.join(directory, file)
+
+            gdf = gpd.read_file(path)
+
+            # ensure WGS84
+            if gdf.crs and gdf.crs.to_string() != "EPSG:4326":
+                gdf = gdf.to_crs("EPSG:4326")
+
+            clipped = gdf.cx[
+                clip_extent[0]:clip_extent[1],
+                clip_extent[2]:clip_extent[3]
+            ]
+
+            if len(clipped) > 0:
+                layers[name] = clipped
+                print(f"Loaded tectonic unit: {name}")
+
+    return layers
+
+tectonic_layers = load_all_shapefiles(TECTONIC_DIR, ZOOM_EXTENT)
+
+# ----------------------------------------------------
+# PLOT MAP
+# ----------------------------------------------------
+plt.figure(figsize=(14, 14))
+ax = plt.axes(projection=ccrs.PlateCarree())
+ax.set_extent(ZOOM_EXTENT)
+
+# Base map
+ax.add_feature(cfeature.LAND, facecolor="#f2f2f2")
+ax.add_feature(cfeature.OCEAN, facecolor="#a6cee3")
+ax.add_feature(cfeature.COASTLINE, linewidth=0.8)
+ax.add_feature(cfeature.BORDERS, linestyle=":", linewidth=0.6)
+
+# ----------------------------------------------------
+# PLOT TECTONIC UNITS
+# ----------------------------------------------------
+unit_colors = [
+    "#fdae61", "#abd9e9", "#a6d96a",
+    "#d7191c", "#ffffbf", "#e6f598"
+]
+
+for i, (name, gdf) in enumerate(tectonic_layers.items()):
+    color = unit_colors[i % len(unit_colors)]
+
+    feat = ShapelyFeature(
+        gdf.geometry,
+        ccrs.PlateCarree(),
+        facecolor=color,
+        edgecolor="black",
+        alpha=0.4
+    )
+
+    ax.add_feature(feat)
+    ax.plot([], [], color=color, linewidth=8, label=name)
+
+# ----------------------------------------------------
+# PLOT SELECTED 24 STATIONS
+# ----------------------------------------------------
+unit_marker_colors = {
+    "archean": "red",
+    "limpopo": "purple",
+    "mesoproterozoic_belts": "green",
+    "neoproterozoic": "orange",
+    "paleoproterozoic_belts": "blue",
+    "paleoproterozoic_shields": "brown"
+}
+
+for _, row in stations.iterrows():
+    color = unit_marker_colors.get(row["Tectonic_Unit"], "black")
+
+    ax.plot(
+        row["Lon"], row["Lat"],
+        marker="o",
+        markersize=8,
+        markeredgecolor="black",
+        color=color,
+        transform=ccrs.PlateCarree(),
+        zorder=30
+    )
+
+    # station label
+    ax.text(
+        row["Lon"] + 0.15,
+        row["Lat"] + 0.15,
+        row["Site"],
+        fontsize=7,
+        transform=ccrs.PlateCarree(),
+        zorder=31
+    )
+
+# ----------------------------------------------------
+# GRIDLINES
+# ----------------------------------------------------
+gl = ax.gridlines(draw_labels=True, linewidth=0.6,
+                  linestyle="--", color="gray", alpha=0.7)
+gl.top_labels = False
+gl.right_labels = False
+
+# ----------------------------------------------------
+# TITLE + LEGEND
+# ----------------------------------------------------
+plt.title(
+    "Final 24 MT Stations Selected for 1D Inversion\n"
+    "Overlay on McCourt (2013) Tectonic Units",
+    fontsize=16
+)
+
+plt.legend(
+    loc="upper right",
+    title="Tectonic Units",
+    fontsize=9,
+    title_fontsize=10
+)
+
+# ----------------------------------------------------
+# SAVE & SHOW
+# ----------------------------------------------------
+plt.savefig("./output/images/all images/final_24_stations_geology_map.png", dpi=300, bbox_inches="tight")
+plt.show()
+
+print("Saved final_24_stations_geology_map.png")
+
+
+# %%
+import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# ----------------------------------------------------
+# INPUTS
+# ----------------------------------------------------
+PER_STATION_DIR = "./output/csv/all_csv_files/determinant_per_station"
+SELECTED_CSV = "./output/csv/all_csv_files/selected_24_stations.csv"
+OUT_PNG = "./output/images/all images/qc_grid_selected_24.png"
+
+# ----------------------------------------------------
+# LOAD SELECTED 24 STATIONS
+# ----------------------------------------------------
+sel = pd.read_csv(SELECTED_CSV)
+
+# build list of determinant csv files (ordered as in CSV)
+station_csvs = []
+for site in sel["Site"]:
+    f = os.path.join(PER_STATION_DIR, f"{site}_det.csv")
+    if not os.path.exists(f):
+        raise FileNotFoundError(f"Missing determinant file: {f}")
+    station_csvs.append(f)
+
+print("Total selected stations:", len(station_csvs))
+
+# ----------------------------------------------------
+# QC GRID PLOT FUNCTION
+# ----------------------------------------------------
+def plot_grid(csv_files, ncols=6, save_png="qc_grid.png"):
+    n = len(csv_files)
+    nrows = int(np.ceil(n / ncols))
+
+    fig = plt.figure(figsize=(4 * ncols, 3 * nrows))
+
+    for i, f in enumerate(csv_files):
+        df = pd.read_csv(f)
+
+        periods = df["period_s"].values
+        rho = df["rho_det"].values
+
+        ax = fig.add_subplot(nrows, ncols, i + 1)
+        ax.loglog(periods, rho, "o-", markersize=3)
+
+        ax.set_title(
+            os.path.basename(f).replace("_det.csv", ""),
+            fontsize=8
+        )
+
+        ax.grid(True, which="both", lw=0.4, ls="--", alpha=0.5)
+        ax.tick_params(axis="both", labelsize=7)
+
+    plt.tight_layout()
+    plt.savefig(save_png, dpi=300)
+    plt.show()   # 🔥 this displays the figure
+
+
+# ----------------------------------------------------
+# PLOT
+# ----------------------------------------------------
+plot_grid(station_csvs, ncols=6, save_png=OUT_PNG)
+
+
+# %%
+import pandas as pd
+import numpy as np
+from mt_metadata.transfer_functions import TF
+
+# -------------------------------
+# INPUT
+# -------------------------------
+edi_file = "../data/all_station_EDI_data/SAMTEX.kim422.2004.edi"
+output_csv = "./output/csv/all_csv_files/SAMTEX.kim422.2004_Zxy.csv"
+
+# -------------------------------
+# READ EDI
+# -------------------------------
+tf = TF(fn=edi_file)
+tf.read()
+
+# -------------------------------
+# EXTRACT DATA DIRECTLY (THE FIX)
+# -------------------------------
+# Instead of converting to a dataset, access attributes directly from the tf object.
+# These attributes are typically xarray DataArrays, so we use .values to get numpy arrays.
+
+periods = tf.period
+
+# Extract Impedance (Z) and Error
+# Note: tf.impedance returns the complex impedance tensor
+Z = tf.impedance.values          # shape (n_periods, 2, 2)
+Z_err = tf.impedance_error.values # shape (n_periods, 2, 2)
+
+# -------------------------------
+# SELECT Zxy
+# -------------------------------
+# Indices: [period_index, output_channel, input_channel]
+# 0=x, 1=y. So [:, 0, 1] is Zxy (Output X, Input Y)
+Zxy = Z[:, 0, 1]
+Zxy_err = Z_err[:, 0, 1]
+
+# -------------------------------
+# BUILD DATAFRAME
+# -------------------------------
+df = pd.DataFrame({
+    "period_s": periods,
+    "Z_real": np.real(Zxy),
+    "Z_imag": np.imag(Zxy),
+    "Z_err": Zxy_err
+})
+
+# -------------------------------
+# CLEAN
+# -------------------------------
+df.replace([np.inf, -np.inf], np.nan, inplace=True)
+df.dropna(inplace=True)
+df.sort_values("period_s", inplace=True)
+
+# -------------------------------
+# SAVE
+# -------------------------------
+df.to_csv(output_csv, index=False)
+
+print("CSV created:", output_csv)
+
+# %%
+import pandas as pd
+import numpy as np
+from mt_metadata.transfer_functions import TF
+
+# -------------------------------
+# INPUT
+# -------------------------------
+edi_file = "../data/all_station_EDI_data/SAMTEX.kim422.2004.edi"
+output_csv = "./output/csv/all_csv_files/SAMTEX.kim422.2004_Zxy.csv"
+
+# -------------------------------
+# READ EDI
+# -------------------------------
+tf = TF(fn=edi_file)
+tf.read()
+
+# -------------------------------
+# EXTRACT DATA
+# -------------------------------
+periods = tf.period
+
+Z = tf.impedance.values
+Z_err = tf.impedance_error.values  # variance
+
+# -------------------------------
+# SELECT Zxy
+# -------------------------------
+Zxy = Z[:, 0, 1]
+
+# TAKE SQRT → standard deviation
+# Zxy_err = np.sqrt(Z_err[:, 0, 1])
+Zxy_err = 0.15 * np.abs(Zxy)
+
+# -------------------------------
+# BUILD DATAFRAME
+# -------------------------------
+df = pd.DataFrame({
+    "period_s": periods,
+    "Z_real": np.real(Zxy),
+    "Z_imag": np.imag(Zxy),
+    "Z_err": Zxy_err
+})
+
+# -------------------------------
+# CLEAN
+# -------------------------------
+df.replace([np.inf, -np.inf], np.nan, inplace=True)
+df.dropna(inplace=True)
+df.sort_values("period_s", inplace=True)
+
+# -------------------------------
+# DOWNSAMPLE
+# -------------------------------
+target_points = 20
+step = max(1, len(df) // target_points)
+df = df.iloc[::step].reset_index(drop=True)
+
+# -------------------------------
+# SAVE
+# -------------------------------
+df.to_csv(output_csv, index=False)
+
+print("CSV created:", output_csv)
+
+
+# %%
+df.to_csv("./output/csv/all_csv_files/SAMTEX.kim422.2004_Zxy.dat",
+          sep=" ",
+          header=False,
+          index=False)
+
+
+# %%
+import numpy as np
+from mt_metadata.transfer_functions import TF
+
+# -------------------------------
+# INPUT
+# -------------------------------
+edi_file = "../data/all_station_EDI_data/SAMTEX.kim422.2004.edi"
+output_dat = "./test1.dat"
+target_points = 20
+noise_percent = 3.0   # same as MATLAB MT.noise_prcnt
+
+# -------------------------------
+# READ EDI
+# -------------------------------
+tf = TF(fn=edi_file)
+tf.read()
+
+periods = tf.period
+Z = tf.impedance.values   # EDI units: (mV/km)/nT
+
+# -------------------------------
+# SELECT Zxy ONLY
+# -------------------------------
+Zxy = Z[:, 0, 1]
+
+# ✅ UNIT CONVERSION (DO NOT MOVE THIS)
+# (mV/km)/nT → Ohms
+Zxy = Zxy * 1e-3
+
+# -------------------------------
+# ERROR (MATCH MATLAB)
+# -------------------------------
+Zxy_err = 0.01 * noise_percent * np.abs(Zxy)
+
+# -------------------------------
+# CLEAN DATA
+# -------------------------------
+mask = (
+    np.isfinite(periods) &
+    np.isfinite(Zxy.real) &
+    np.isfinite(Zxy.imag) &
+    (np.abs(Zxy) > 0)
+)
+
+periods = periods[mask]
+Zxy = Zxy[mask]
+Zxy_err = Zxy_err[mask]
+
+# -------------------------------
+# SORT BY PERIOD
+# -------------------------------
+idx = np.argsort(periods)
+periods = periods[idx]
+Zxy = Zxy[idx]
+Zxy_err = Zxy_err[idx]
+
+# -------------------------------
+# LOG-SPACE SUBSAMPLING
+# -------------------------------
+logP = np.log10(periods)
+log_bins = np.linspace(logP.min(), logP.max(), target_points)
+
+selected = np.unique([
+    np.argmin(np.abs(logP - lb)) for lb in log_bins
+])
+
+periods = periods[selected]
+Zxy = Zxy[selected]
+Zxy_err = Zxy_err[selected]
+
+# -------------------------------
+# FINAL SORT
+# -------------------------------
+idx = np.argsort(periods)
+periods = periods[idx]
+Zxy = Zxy[idx]
+Zxy_err = Zxy_err[idx]
+
+# -------------------------------
+# SAVE (EXACT MATLAB FORMAT)
+# -------------------------------
+with open(output_dat, "w") as f:
+    for p, z, e in zip(periods, Zxy, Zxy_err):
+        f.write(f"{p:12.5f} "
+                f"{z.real:+10.4E} "
+                f"{z.imag:+10.4E} "
+                f"{e:+10.4E}\n")
+
+print("✔ MT_data_Z.dat ready for inversion")
+print("✔ Number of periods:", len(periods))
+
+
+# %%
+import numpy as np
+import matplotlib.pyplot as plt
+
+# -------------------------------
+# Load MT impedance data
+# -------------------------------
+# data = np.loadtxt("./MT_data_Z.dat")
+data = np.loadtxt("./test1.dat")
+
+period = data[:, 0]
+Zr = data[:, 1]
+Zi = data[:, 2]
+Zerr = data[:, 3]
+
+Z = Zr + 1j * Zi
+
+# -------------------------------
+# Physical constants
+# -------------------------------
+mu = 4 * np.pi * 1e-7
+omega = 2 * np.pi / period
+
+# -------------------------------
+# Apparent resistivity & phase
+# -------------------------------
+absZ = np.abs(Z)
+
+appres = (absZ ** 2) / (mu * omega)
+phase = np.degrees(np.arctan2(Zi, Zr))
+
+# -------------------------------
+# Error estimation (same as MATLAB)
+# -------------------------------
+appres_err = 2 * absZ * (Zerr / (mu * omega))
+phase_err = (Zerr / absZ) * (180 / np.pi)
+
+# -------------------------------
+# Plot apparent resistivity
+# -------------------------------
+plt.figure()
+plt.errorbar(period, appres, yerr=appres_err, fmt='o')
+plt.xscale('log')
+plt.yscale('log')
+plt.xlabel("Period (s)")
+plt.ylabel("Apparent Resistivity (ohm·m)")
+plt.title("MT Apparent Resistivity")
+plt.grid(True)
+
+# -------------------------------
+# Plot phase
+# -------------------------------
+plt.figure()
+plt.errorbar(period, phase, yerr=phase_err, fmt='o')
+plt.xscale('log')
+plt.xlabel("Period (s)")
+plt.ylabel("Phase (degrees)")
+plt.title("MT Phase")
+plt.grid(True)
+
+plt.show()
+
+
+# %%
+import os
+import numpy as np
+from mt_metadata.transfer_functions import TF
+
+# -------------------------------
+# SETTINGS
+# -------------------------------
+edi_folder = "../data/all_station_EDI_data/"
+output_folder = "./MT_DAT/"
+target_points = 20
+noise_percent = 3.0
+
+# Create output folder if not exists
+os.makedirs(output_folder, exist_ok=True)
+
+# -------------------------------
+# STATIONS
+# -------------------------------
+stations = [
+    "SAMTEX.bot228.2005",
+    "SAMTEX.rtz401.2005",
+    "SAMTEX.kap067.2003",
+    "SAMTEX.bot407.2005",
+    "SAMTEX.bot416.2005",
+    "SAMTEX.kal017.2008",
+    "SAMTEX.san006.2008",
+    "SAMTEX.san008.2008",
+    "SAMTEX.kap010.2003",
+    "SAMTEX.zim128.2005",
+    "SAMTEX.mof102.2005",
+    "SAMTEX.NEN003.2006",
+    "SAMTEX.ELZ291A.2008",
+    "SAMTEX.dmb017.2006",
+    "SAMTEX.oka008.2006",
+    "SAMTEX.CPV027.2006",
+    "SAMTEX.k2g006.2006",
+    "SAMTEX.mof107.2005",
+    "SAMTEX.san011.2008",
+    "SAMTEX.mak002.2006",
+    "SAMTEX.kim422.2004",
+    "SAMTEX.kim432.2004",
+    "SAMTEX.kim435.2004",
+    "SAMTEX.rtz417.2005"
+]
+
+# -------------------------------
+# LOOP OVER STATIONS
+# -------------------------------
+for station in stations:
+
+    edi_file = os.path.join(edi_folder, station + ".edi")
+    output_dat = os.path.join(output_folder, station + ".dat")
+
+    try:
+        tf = TF(fn=edi_file)
+        tf.read()
+
+        periods = tf.period
+        Z = tf.impedance.values
+        Zxy = Z[:, 0, 1]
+
+        # Unit conversion
+        Zxy = Zxy * 1e-3
+
+        # Error (3%)
+        Zxy_err = 0.01 * noise_percent * np.abs(Zxy)
+
+        # Clean
+        mask = (
+            np.isfinite(periods) &
+            np.isfinite(Zxy.real) &
+            np.isfinite(Zxy.imag) &
+            (np.abs(Zxy) > 0)
+        )
+
+        periods = periods[mask]
+        Zxy = Zxy[mask]
+        Zxy_err = Zxy_err[mask]
+
+        # Sort
+        idx = np.argsort(periods)
+        periods = periods[idx]
+        Zxy = Zxy[idx]
+        Zxy_err = Zxy_err[idx]
+
+        # Log-space sampling
+        logP = np.log10(periods)
+        log_bins = np.linspace(logP.min(), logP.max(), target_points)
+
+        selected = np.unique([
+            np.argmin(np.abs(logP - lb)) for lb in log_bins
+        ])
+
+        periods = periods[selected]
+        Zxy = Zxy[selected]
+        Zxy_err = Zxy_err[selected]
+
+        # Final sort
+        idx = np.argsort(periods)
+        periods = periods[idx]
+        Zxy = Zxy[idx]
+        Zxy_err = Zxy_err[idx]
+
+        # Save
+        with open(output_dat, "w") as f:
+            for p, z, e in zip(periods, Zxy, Zxy_err):
+                f.write(f"{p:12.5f} "
+                        f"{z.real:+10.4E} "
+                        f"{z.imag:+10.4E} "
+                        f"{e:+10.4E}\n")
+
+        print("✔ Saved:", station)
+
+    except Exception as e:
+        print("✘ Error with", station, ":", e)
+
+print("\n✔ All stations processed")
+
+
+# %%
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+
+data_folder = "./MT_DAT/"
+
+files = [f for f in os.listdir(data_folder) if f.endswith(".dat")]
+
+mu = 4 * np.pi * 1e-7
+
+plt.figure(figsize=(8,6))
+
+for file in files:
+    data = np.loadtxt(os.path.join(data_folder, file))
+
+    period = data[:, 0]
+    Zr = data[:, 1]
+    Zi = data[:, 2]
+    Zerr = data[:, 3]
+
+    Z = Zr + 1j * Zi
+    omega = 2 * np.pi / period
+
+    absZ = np.abs(Z)
+    appres = (absZ ** 2) / (mu * omega)
+
+    plt.loglog(period, appres, marker='o', linestyle='-', alpha=0.6)
+
+plt.xlabel("Period (s)")
+plt.ylabel("Apparent Resistivity (ohm·m)")
+plt.title("All Stations - Apparent Resistivity")
+plt.grid(True, which="both")
+plt.show()
+
+
+# %%
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+
+# ----------------------------------------------------
+# INPUT
+# ----------------------------------------------------
+DATA_DIR = "./MT_DAT/"
+OUT_PNG = "./MT_QC_GRID.png"
+
+# ----------------------------------------------------
+# LOAD ALL .dat FILES
+# ----------------------------------------------------
+dat_files = sorted([
+    os.path.join(DATA_DIR, f)
+    for f in os.listdir(DATA_DIR)
+    if f.endswith(".dat")
+])
+
+print("Total stations:", len(dat_files))
+
+# ----------------------------------------------------
+# QC GRID PLOT FUNCTION
+# ----------------------------------------------------
+def plot_grid(dat_files, ncols=6, save_png="qc_grid.png"):
+
+    mu = 4 * np.pi * 1e-7
+
+    n = len(dat_files)
+    nrows = int(np.ceil(n / ncols))
+
+    fig = plt.figure(figsize=(4 * ncols, 3 * nrows))
+
+    for i, f in enumerate(dat_files):
+
+        data = np.loadtxt(f)
+
+        period = data[:, 0]
+        Zr = data[:, 1]
+        Zi = data[:, 2]
+
+        Z = Zr + 1j * Zi
+        omega = 2 * np.pi / period
+        absZ = np.abs(Z)
+
+        appres = (absZ ** 2) / (mu * omega)
+
+        ax = fig.add_subplot(nrows, ncols, i + 1)
+
+        ax.loglog(period, appres, "o-", markersize=3)
+
+        ax.set_title(
+            os.path.basename(f).replace(".dat", ""),
+            fontsize=8
+        )
+
+        ax.grid(True, which="both", lw=0.4, ls="--", alpha=0.5)
+        ax.tick_params(axis="both", labelsize=7)
+
+    plt.tight_layout()
+    plt.savefig(save_png, dpi=300)
+    plt.show()
+
+
+# ----------------------------------------------------
+# PLOT
+# ----------------------------------------------------
+plot_grid(dat_files, ncols=6, save_png=OUT_PNG)
+
+
+
+
+
+--------------------------------------------------------
+--------------------------------------------------------
+part 2 : inversion of synthetic and real data (which prepared by above steps)
+detail : this code is written in matlab (basically i run inbersion and then this 3 chains, and it complete code present in MT_Bayesian_code)
+---------------------------------------------------------
+---------------------------------------------------------
+
+Bayesian_1D_MTDC_J.m : clc;    clear all;      close all;
+
+% Add Path of the Folders and all the subfolders having all the subroutines
+% restoredefaultpath
+subroutinefolder1 = 'MT_DC_function';
+addpath(genpath([pwd,'/',subroutinefolder1]));
+
+CData = GetDefaultParameters();
+
+folder_name = 'Test';  mkdir(folder_name);
+destination_folder = fullfile(pwd, folder_name);
+
+
+% MT_datafile = 'SAMTEX.kim422.2004_Zxy.dat';
+MT_datafile = 'MT_data_Z.dat';
+DC_datafile = ' .dat';
+CData.LogFile = 'LogFile.dat';
+
+% which data we nned to invert
+CData.inversion_method = 'MT';   % MT DC MT_DC
+CData.MT.datatype = 'Z';
+
+[model_m0, model_LF0, data_sigma] = initialise_chain(CData);
+
+CData = read_data(MT_datafile, DC_datafile, CData);
+
+fprintf('%s \n','MCMC Procedure Starts ');
+fid = fopen(CData.LogFile,'w');
+swapCount = [];
+
+for is = 1:CData.nsteps
+    for ic = 1:CData.nChains
+        % Pick LF0 and model0 after parallel tempering
+        model0 = model_m0{ic};  LF0 = model_LF0{ic}; noise = data_sigma{ic};
+
+        [Samples, model0, LF0, noise] =  bayesain_hier(model0, LF0,...
+             noise, CData, ic, is);
+
+        % update the models and likehood
+        model_m0{ic} = model0;  model_LF0{ic} = LF0; data_sigma{ic} = noise;
+
+        % Let us store the last results only, we will keep updating the
+        % results.
+        results_all(ic,is) = Samples;
+    end
+
+    status = save_chain(results_all, is, CData, swapCount, destination_folder);
+
+    % Begin parallel tempering we will flip the model and likelihood
+    if any(CData.temperature > 1)
+        [model_LF0, model_m0, data_sigma, swapCount] = swap_temperatures...
+            (model_LF0, model_m0, data_sigma, CData, is, swapCount);
+    end
+end
+fclose(fid);
+fprintf('%s \n','MCMC Procedure Ends ');
+
+function CData = GetDefaultParameters( )
+
+% CData.temperature = [ones(1,30) logspace(0, log10(10), 20)];
+% CData.temperature = [1 1 1 1.2 2.0 5];
+CData.temperature = [1 1];
+
+% number of chains we want to apply parallel tempering in one go.
+CData.nchain_for_PT = min(length(find(CData.temperature==1)),...
+    length(find(CData.temperature~=1)));
+
+CData.nChains = length(CData.temperature);
+%  The jump type between different temperatures:
+%  0, randomly choose a temperature;
+%  1, randomly choose a temperature between the two neighbours
+%  2, choose the nearest temperature
+CData.jumptype = 1;
+
+% log domain for z or not
+CData.MT.datatype = 'app_phase';
+CData.logdomain = true;
+CData.log_normal_noise = false;
+
+CData.scale = 1;   % scale to convert model to km, keep it as 1
+
+% Minimum and maximum value of nodes for creation of new layer
+if CData.logdomain == true
+    CData.min_z = log10(10);           CData.max_z = log10(350000);
+else
+    % linear domain
+    CData.min_z = 0;                   CData.max_z = 200;
+end 
+CData.minumum_layer_thickness = 1000;     % specify in mts;
+
+CData.proposal = [0.1 0.5 0.66 1];
+
+% No of steps and number of samples in each step
+CData.nsteps = 100;       CData.nsamples = 1000;
+
+CData.resmin = 1.0E-01;   CData.resmax = 1.0E+05;
+
+% updating birth rates for multiple chains
+CData.nChains_atT1 = length(find(CData.temperature==1));  % chains at T == 1
+CData.nChains_atoT = CData.nChains - CData.nChains_atT1;  % chains at T /= 1
+
+CData.sigma_rho = [0.2*ones(1,CData.nChains_atT1) linspace(0.2, 0.4, CData.nChains_atoT)];
+CData.sigma_rho_birth = [0.4*ones(1,CData.nChains_atT1) linspace(0.4, 0.6, CData.nChains_atoT)];
+CData.sigma_rho_delayed = CData.sigma_rho/4;
+
+% Position values range and deivations
+CData.sigma_loc_z = [2*ones(1,CData.nChains_atT1) linspace(2, 3, CData.nChains_atoT)];
+CData.sigma_loc_z_delayed = CData.sigma_loc_z/2;
+
+% Noise values range and deivations
+CData.sigma_Z = ([1 5]);
+CData.sigma_app_res = ([0.8 5]);
+CData.sigma_phase = ([0.8 5]);
+CData.sigma_noise = 0.01;
+
+
+% Kernel type; 0 for gaussian and 1 for prior;
+CData.kernel = 1;            CData.eps = 1.0E-09;
+
+% Minimum and the maximum number of nodes
+CData.minnodes = 2;         CData.maxnodes = 30;
+
+% ==================== No need to look further down ===================== %
+CData.min_res_log = log10(CData.resmin);
+CData.max_res_log = log10(CData.resmax);  % values on the log10 scale
+
+CData.rho = 'log10';       % logrho
+end
+
+A_01_see_chain_convergence.m : clc; clear all;
+
+try
+    load('MT_TD_Chain_001.mat');
+    inversion_flag = 0;
+    suffix = 'MT_TD_Chain_';
+    image_name = 'MT_convergence_image';
+    fprintf('Processing MT chains \n')
+catch
+    try
+        load('DC_TD_Chain_001.mat');
+        inversion_flag = 1;
+        suffix = 'DC_TD_Chain_';
+        image_name = 'MT_convergence_image';
+        fprintf('Processing DC chains \n')
+    catch
+        load('MT_DC_TD_Chain_001.mat');
+        inversion_flag = 2;
+        suffix = 'MT_DC_TD_Chain_';
+        image_name = 'MT_convergence_image';
+        fprintf('Processing MT+DC chains \n')
+    end
+end
+
+
+nChains = CData.nChains;
+fprintf('Processing the chains...\n')
+
+like_all = zeros(nChains, CData.nsteps*CData.nsamples);
+if inversion_flag == 0
+    sigma_all = zeros(nChains, CData.nsteps*CData.nsamples, 2);
+    nrms_all = zeros(nChains, CData.nsteps*CData.nsamples, 1);
+elseif inversion_flag == 1
+    sigma_all = zeros(nChains, CData.nsteps*CData.nsamples, 1);
+    nrms_all = zeros(nChains, CData.nsteps*CData.nsamples, 1);
+else
+    sigma_all = zeros(nChains, CData.nsteps*CData.nsamples,3);
+    nrms_all = zeros(nChains, CData.nsteps*CData.nsamples,2);
+end
+
+k = 0;
+for ic = 1:nChains
+    filename = [suffix,sprintf('%03d',ic),'.mat'];
+    load(filename);
+    steps_in_chain = length(Samples_Chain);
+    fprintf('%s %d \n','Processing chain no ..', ic);
+    for istep = 1:steps_in_chain
+        samp = Samples_Chain(istep);
+        samples_in_step = length(samp.misfit);
+        samp.temperature = 1;
+        if samp.temperature ~= 1
+            break
+        else
+            % This chain has the temperature as 1; will select it
+            i1 = (istep-1)*samples_in_step+1; i2 = istep*samples_in_step;  
+            like_all(ic,i1:i2) = samp.like;
+            if inversion_flag == 0
+                % sigma_all(ic,i1:i2,1:2) = samp.sigma;
+                nrms_all(ic,i1:i2) = samp.misfit;
+            elseif inversion_flag == 1
+                % sigma_all(ic,i1:i2) = samp.sigma;
+                nrms_all(ic,i1:i2) = samp.misfit;
+            else
+                % sigma_all(ic,i1:i2,1:3) = samp.sigma;
+                nrms_all(ic,i1:i2,1:2) = samp.misfit;
+            end
+        end
+    end
+end
+
+figure
+subplot(3,1,1)
+hold on
+[n, m] = size(nrms_all);
+for i = 1:n
+    plot(1:m, nrms_all(i,:), '-');
+end
+plot([1 m], [1 1], '--');
+set(gca,'XScale','log'); 
+axis([0 m -10 10]);
+
+xlabel('# samples')
+ylabel('nRMS');
+
+subplot(3,1,2)
+hold on
+[n, m] = size(nrms_all);
+for i = 1:n
+    plot(1:m, log10(like_all(i,:)), '-');
+end
+set(gca,'XScale','log');
+xlabel('# samples')
+ylabel('log (likelihood)');
+
+subplot(3,1,3)
+hold on
+[n, m, ~] = size(sigma_all);
+if strcmpi(CData.inversion_method,'MT_DC')
+    for i = 1:n
+        % plot(1:m, sigma_all(i,:,1), '-');
+    end
+    for i = 1:n
+        plot(1:m, sigma_all(i,:,2), '--');
+    end
+else
+    for i = 1:n
+        plot(1:m, sigma_all(i,:,1), '-');
+        plot(1:m, sigma_all(i,:,2), '-');
+    end
+end
+plot([1 m], [1 1], '--');
+set(gca,'XScale','log');
+xlabel('# samples')
+ylabel('sigma factor');
+
+f=gcf;
+print(f,suffix(1:end-1),'-djpeg',['-r',num2str(600)]);
+
+
+A_02_process_chains.m : clc; clear;
+
+try
+    load('MT_TD_Chain_001.mat');
+    inversion_flag = 0;
+    suffix = 'MT_TD_Chain_';
+    image_name = 'MT_convergence_image';
+    fprintf('Processing MT chains \n')
+catch
+    try
+        load('DC_TD_Chain_001.mat');
+        inversion_flag = 1;
+        suffix = 'DC_TD_Chain_';
+        image_name = 'MT_convergence_image';
+        fprintf('Processing DC chains \n')
+    catch
+        load('MT_DC_TD_Chain_001.mat');
+        inversion_flag = 2;
+        suffix = 'MT_DC_TD_Chain_';
+        image_name = 'MT_convergence_image';
+        fprintf('Processing MT+DC chains \n')
+    end
+end
+
+nsteps = 20;          step_discard = floor(nsteps*5/10);
+chain_thin = 10;       nrms_limit = 20;
+% information for binning, make changes here
+S.zMin = 0; S.zMax = 350000;    S.dz = 2000;
+S.rhoMin = -1;     S.rhoMax = 6;             S.drho = 0.1; % in log10(rho) (ohm-m)
+
+nsamples = (nsteps-step_discard)*CData.nChains_atT1*CData.nsamples/chain_thin;
+nsamples_chain = (nsteps-step_discard)*CData.nsamples/chain_thin;
+fprintf('%s %d  \n','Total Chains :', CData.nChains_atT1);
+fprintf('%s %d  \n','Total Steps :', nsteps);
+fprintf('%s %d  \n','Total Samples in a step : ', CData.nsamples);
+fprintf('%s %d  \n','Total steps discarded : ', step_discard);
+fprintf('%s %d  \n','chain thinning : ', chain_thin);
+fprintf('%s %d  \n','Total Samples after burin-in and thinning : ', nsamples);
+
+rho_all = zeros(nsamples,CData.maxnodes);   z_all = rho_all;  
+like_all = zeros(nsamples,1);               ngrid = zeros(nsamples,1);      
+step = zeros(nsamples,1);
+if inversion_flag == 2
+    sigma = zeros(nsamples_chain, CData.nChains_atT1,3);
+    nrms_all = zeros(nsamples,3);
+else
+    sigma = zeros(nsamples_chain, CData.nChains_atT1);
+    nrms_all = zeros(nsamples,1);
+end
+k = 0;
+for ic = 1:CData.nChains_atT1
+    filename = [suffix,sprintf('%03d',ic),'.mat'];
+    load(filename);
+    fprintf('%s %d \n','Processing chains no ', ic)
+    j = 0;
+    for istep = 1:nsteps
+        samp = Samples_Chain(istep);
+        samp.temperature = 1;
+        if samp.temperature ~= 1
+            break
+        else
+            % This chain has the temperature as 1; will select it
+            if istep > step_discard
+                for i = 1:chain_thin:length(samp.step)
+                    k = k + 1; j = j + 1;
+                    ngrids = samp.ncells(i);
+                    if CData.logdomain == true
+                        z_all(k,1:ngrids) = [0 10.^samp.model(i,2:ngrids,1)];
+                    else
+                        z_all(k,1:ngrids) = [0 samp.model(i,2:ngrids,1)];
+                    end
+                    
+                    rho_all(k,1:ngrids) = samp.model(i,1:ngrids,2);
+                    nrms_all(k,1) = samp.misfit(i);
+                    like_all(k,1) = samp.like(i);
+                    if inversion_flag == 2
+                        sigma(j,ic,:) = samp.sigma(i,:);
+                    else
+                        sigma(j,ic) = samp.sigma(i);
+                    end
+                    ngrid(k,1) = ngrids;
+                    step(k,1) = samp.step(i);
+                end
+            end
+        end
+    end
+end
+z_all = z_all(1:k,:);        rho_all = rho_all(1:k,:); 
+like_all = like_all(1:k,1);  ngrid = ngrid(1:k,1);        
+step = step(1:k,1);
+if inversion_flag == 2
+    sigma = sigma(1:j,:,:);         nrms_all = nrms_all(1:k,:);  
+else
+    sigma = sigma(1:j,:);           nrms_all = nrms_all(1:k,1);  
+end
+indx = find(nrms_all(:,1) < nrms_limit);
+
+z_all = z_all(indx,:);        rho_all = rho_all(indx,:); 
+like_all = like_all(indx,1);
+ngrid = ngrid(indx,1);        step = step(indx,1);
+if inversion_flag == 2
+    nrms_all = nrms_all(indx,:);
+else
+    nrms_all = nrms_all(indx,1);
+end
+fprintf('%s %d  \n','Total Samples selected', length(indx));
+fprintf('Saving to .mat file...\n')
+save([suffix,'Processed.mat'],'CData','sigma','z_all','rho_all',...
+    'nrms_all','like_all','ngrid','step','-v7.3')
+
+fprintf('Computing various statistical information ...\n')
+S.nZbins = ceil(( S.zMax - S.zMin )/S.dz);    % number of depth bins
+S.zPlot = S.zMin+S.dz/2+(0:S.nZbins-1)*S.dz;  % Depth axis of our PDF plots (midpoints of depth bins)
+% S.zPlot = 10.^S.zPlot;
+
+S.rho = S.rhoMin : S.drho : S.rhoMax;
+S.nRho = length(S.rho) - 1;
+S.prior = (1/(S.rhoMax-S.rhoMin)) * ones(S.nRho,1);
+
+S.rhoBinEdges = S.rhoMin:S.drho:S.rhoMax;
+S.nRhobins = length(S.rhoBinEdges) - 1;
+S.rhoPlot = S.rhoMin + S.drho/2 + (0:S.nRhobins-1)*S.drho; % rho axis of our PDF plots (midpoints of rho bins)
+
+S.nSamples = size(ngrid,1);
+S.rhoSamples = nan(S.nZbins,S.nSamples);
+S.kSamples = nan(S.nZbins,S.nSamples);
+
+iProgress = 1;
+for iSample = 1:S.nSamples
+    n_grids = ngrid(iSample);   % Number of interfaces
+    z = [z_all(iSample,1:n_grids) S.zMax];
+    temp = z(2:end,1)-z(1:end-1,1);
+    if min(temp) <= 0
+        disp('here');
+    end
+    rho = rho_all(iSample,1:n_grids);
+    % set the counting for all the models
+    for j = 1:n_grids   % Till the last layer
+        iZbin1 = find(S.zPlot >= z(j), 1, 'first');
+        iZbin2 = find(S.zPlot < z(j+1), 1, 'last');
+        if ~isempty(iZbin1)
+            S.rhoSamples(iZbin1:iZbin2, iSample) = rho(j);
+            S.kSamples(iZbin1, iSample) = 1;
+        end
+    end
+    if(mod(iSample,floor(iProgress*S.nSamples/10)) == 0 )
+        fprintf('%d %% samples processed...\n',floor(iProgress*10))
+        iProgress = iProgress + 1;
+    end
+end
+S.kSamples = S.kSamples(1:end-1,:);
+
+S.posteriorPDF = zeros(S.nZbins,S.nRhobins);
+S.p5 = zeros(S.nZbins,1);
+S.p95 = zeros(S.nZbins,1);
+S.KLd = zeros(S.nZbins,1);
+S.pmean = zeros(S.nZbins,1);
+iProgress = 1;
+for iZbin=1:S.nZbins
+    a = histcounts(S.rhoSamples(iZbin,:),S.rhoBinEdges,'Normalization','pdf');
+    S.posteriorPDF(iZbin,:) = a;
+    S.p5(iZbin) = prctile(S.rhoSamples(iZbin,:),5);
+    S.p95(iZbin) = prctile(S.rhoSamples(iZbin,:),95);
+    S.pmean(iZbin) = mean(S.rhoSamples(iZbin,:));
+    S.KLd(iZbin) = KLdivergence(S.posteriorPDF(iZbin,:),S.prior);
+
+    if(mod(iZbin,floor(iProgress*S.nZbins/10)) == 0 )
+        fprintf('%d %% complete...\n',floor(iProgress*10))
+        iProgress = iProgress + 1;
+    end
+end
+S.KLd(1) = 0;  % To make the first interface as invalid as its always there
+
+S.p5 = [S.p5(1); S.p5(1:end-1)];
+S.p95 = [S.p95(1); S.p95(1:end-1)];
+
+save([suffix,'Stat_info.mat'],'S','nrms_all','ngrid','step','-v7.3')
+
+A_03_plot_posteriori_3_things.m : clc; clear all;
+
+try
+    load('MT_TD_Chain_Stat_info.mat');
+    fprintf('Plotting MT chains \n')
+    image_name = 'MT_Post_image';
+catch
+    try
+        load('DC_TD_Chain_Stat_info.mat');
+        fprintf('Plotting DC chains \n')
+        image_name = 'DC_Post_image';
+    catch
+        load('MT_DC_TD_Chain_Stat_info.mat');
+        fprintf('Plotting MT+DC chains \n')
+        image_name = 'MT_Post_image';
+    end
+end
+
+fnt_headg = 14; fnt_ticks = 12;     fnt_label = 12;    marksize = 8;
+xwidth = 800; ywidth = 600;
+
+figure1 = figure;
+set(gcf,'PaperPositionMode','auto')
+set(figure1, 'Position', [0 0 xwidth ywidth])
+
+% S.zPlot = 10.^S.zPlot/1000;
+
+subplot(1,3,1)
+
+h = pcolor(S.rhoPlot,S.zPlot,log10(S.posteriorPDF));
+set(h,'EdgeColor','none')
+hold on
+stairs(S.p5,S.zPlot,'-r','linewidth',1)
+stairs(S.p95,S.zPlot,'-r','linewidth',1)
+if exist('MT_data.mat','file')
+   load('MT_data.mat')
+   y.z = [0; cumsum(MT.thicknesses)]; y.z = y.z(1:end-1);
+   y.rho = log10(MT.resistivities);
+   y.z(1) = -1.;
+   y.z(2:end) = (y.z(2:end));
+   plotModel1D(y)
+end
+xlabel('log(\rho) (ohm-m)')
+ylabel('log10 Depth (m)')
+set(gca,'YDir','reverse','Xtick',-1:1:6)
+ylim([0 350000])
+set(gca,'FontSize',fnt_ticks)
+c = colorbar;
+c.Label.String = 'log10 (PDF)';
+
+subplot(1,3,2)
+kPDF = sum(S.kSamples, 2, 'omitnan')./(sum(sum(S.kSamples, 'omitnan'), 'omitnan') * S.dz);
+kPrior = mean(kPDF);
+kPDF(1) = 0;  % To make the first interface as invalid as its always there
+plot(kPDF,S.zPlot(1:end-1),'linewidth',2)
+hold on
+plot([kPrior kPrior],[S.zPlot(2) S.zPlot(end-1)],'--k')
+set(gca,'YDir','reverse')
+set(gca,'FontSize',14)
+% ylim([S.zPlot(1) S.zPlot(end-1)])
+% ylim([log10(100) log10(5000)])
+ylim([0 350000])
+ylabel('Depth (m)')
+xlabel('probability density')
+
+subplot(1,3,3)
+histogram(ngrid,'Normalization','pdf')
+xlabel('# of subsurface layers')
+ylabel('probability density')
+set(gca,'FontSize',fnt_ticks)
+
+% set(gcf,'position',[50  250  1092  477])
+
+f=gcf;
+print(f,image_name,'-djpeg',['-r',num2str(600)]);
+
+
+
+
+
+----------------------------------------------------------
+----------------------------------------------------------
+part 3 : verification of inversion output 
+detail : to verify output i have downloaded already 3d inversion done in that area so i extract 1d profile near each station and compare using this code 
+----------------------------------------------------------
+----------------------------------------------------------
+
+# =========================
+# COMPLETE RUN SCRIPT
+# =========================
+
+import os
+import numpy as np
+import pandas as pd
+import h5py
+import matplotlib.pyplot as plt
+from scipy.interpolate import interp1d
+
+# =========================
+# FUNCTION: Read ModEM rho
+# =========================
+def read_modem_rho(filepath):
+    with open(filepath, 'r') as f:
+        lines = [l.strip() for l in f if l.strip()]
+
+    lines = [l for l in lines if not l.startswith('#')]
+
+    header_tokens = lines[0].replace(",", " ").split()
+    header_nums = []
+    for tok in header_tokens:
+        try:
+            header_nums.append(int(float(tok)))
+        except ValueError:
+            continue
+
+    if len(header_nums) < 3:
+        raise ValueError(f"Could not parse grid dimensions (nx, ny, nz) from header line: {lines[0]}")
+
+    nx, ny, nz = header_nums[:3]
+
+    dx = np.array(list(map(float, lines[1].split())))
+    dy = np.array(list(map(float, lines[2].split())))
+    dz = np.array(list(map(float, lines[3].split())))
+
+    total = nx * ny * nz
+
+    values = []
+    for line in lines[4:]:
+        for val in line.split():
+            try:
+                values.append(float(val))
+                if len(values) == total:
+                    break
+            except:
+                continue
+        if len(values) == total:
+            break
+
+    log_rho = np.array(values).reshape((nx, ny, nz), order='F')
+    rho = 10 ** log_rho
+    depth = np.cumsum(dz)
+
+    return rho, depth, dx, dy
+
+
+# =========================
+# LOAD DATA (ONCE)
+# =========================
+df = pd.read_csv("output/csv/all_csv_files/selected_24_stations.csv")
+
+# =========================
+# LOAD MODEL FIRST
+# =========================
+rho, depth, dx, dy = read_modem_rho("../SA2022ModelsAndData/ModEM_Selected/ModEM_SA2022_Selected.rho")
+
+# =========================
+# THEN CREATE GRID
+# =========================
+x = np.cumsum(dx) - dx/2
+y = np.cumsum(dy) - dy/2
+
+x_km = x / 1000
+y_km = y / 1000
+
+
+# =========================
+# GRID SETUP
+# =========================
+n_stations = len(df)
+ncols = 4
+nrows = int(np.ceil(n_stations / ncols))
+
+fig, axes = plt.subplots(nrows, ncols, figsize=(20, 5*nrows))
+axes = axes.flatten()
+
+plot_index = 0  # IMPORTANT
+
+
+# =========================
+# LOAD STATIONS (IMPORTANT)
+# =========================
+stations = []
+
+with open("../SA2022ModelsAndData/ModEM_Selected/ModEM_SA2022_Selected.dat") as f:
+    for line in f:
+        parts = line.strip().split()
+        if len(parts) > 5:
+            try:
+                lat_c = float(parts[2])
+                lon_c = float(parts[3])
+                if -90 <= lat_c <= 90 and -180 <= lon_c <= 180:
+                    stations.append([lat_c, lon_c])
+            except:
+                continue
+
+stations = np.array(stations)
+stations = np.unique(stations, axis=0)
+
+# =========================
+# LOOP OVER STATIONS
+# =========================
+for i, row in df.iterrows():
+
+    lat = row["Lat"]
+    lon = row["Lon"]
+
+    # ----------------------
+    # FIND NEAREST STATION
+    # ----------------------
+    dist = np.sqrt((stations[:, 0] - lat)**2 + (stations[:, 1] - lon)**2)
+    idx = np.argmin(dist)
+
+    # ----------------------
+    # MAP TO GRID (APPROX)
+    # ----------------------
+    ix = int((idx / len(stations)) * len(dx))
+    iy = int((idx / len(stations)) * len(dy))
+
+    # clamp
+    ix = min(max(ix, 0), len(dx)-1)
+    iy = min(max(iy, 0), len(dy)-1)
+
+    # extract ModEM 1D
+    rho_1d = rho[ix, iy, :]
+    rho_modem_log = np.log10(rho_1d)
+    # depth_km = depth / 1000
+
+    depth_km = depth / 1000
+
+    # limit ModEM to 350 km
+    modem_mask = depth_km <= 350
+    rho_modem_log_plot = rho_modem_log[modem_mask]
+    depth_km_plot = depth_km[modem_mask]
+
+    site = row["Site"]
+
+    mat_path = f"../data_info_file/MT_TD_Chain_Stat_info_{site}.mat"
+
+    if not os.path.exists(mat_path):
+        print(f"❌ Missing: {site}")
+        continue
+
+    print(f"Processing: {site}")
+
+    # ----------------------
+    # LOAD INVERSION
+    # ----------------------
+    with h5py.File(mat_path, 'r') as f:
+        S = f['S']
+        
+        rho_p5 = np.array(S['p5']).flatten()
+        rho_p95 = np.array(S['p95']).flatten()
+        rho_my_log = (rho_p5 + rho_p95) / 2
+        depth_my_m = np.array(S['zPlot']).flatten()
+
+    depth_my_km = depth_my_m / 1000
+
+    # limit inversion to 350 km
+    inv_mask = depth_my_km <= 350
+
+    rho_my_log_plot = rho_my_log[inv_mask]
+    rho_p5_plot = rho_p5[inv_mask]
+    rho_p95_plot = rho_p95[inv_mask]
+    depth_my_km_plot = depth_my_km[inv_mask]
+
+    # ----------------------
+    # RMS CALCULATION
+    # ----------------------
+    rho_inv_real = 10 ** rho_my_log
+
+    interp_func = interp1d(depth, rho_1d, bounds_error=False, fill_value=np.nan)
+    rho_modem_interp = interp_func(depth_my_m)
+
+    valid = (depth_my_m <= 300000)
+    valid = valid & (~np.isnan(rho_modem_interp))
+
+    if np.sum(valid) == 0:
+        print(f"⚠️ No valid depth for {site}")
+        continue
+
+    misfit = np.log10(rho_inv_real[valid]) - np.log10(rho_modem_interp[valid])
+    rms = np.sqrt(np.mean(misfit**2))
+
+    print(f"RMS: {rms:.2f}")
+
+    # ----------------------
+    # INDIVIDUAL PLOT SAVE
+    # ----------------------
+    plt.figure(figsize=(5, 7))
+
+    plt.plot(rho_modem_log_plot, depth_km_plot, label="ModEM")
+    plt.plot(rho_my_log_plot, depth_my_km_plot, color='red', label="1D")
+
+    plt.fill_betweenx(
+        depth_my_km_plot,
+        rho_p5_plot,
+        rho_p95_plot,
+        color='red',
+        alpha=0.3
+    )
+
+    plt.gca().invert_yaxis()
+    plt.title(site)
+    plt.xlabel("log10(Resistivity)")
+    plt.ylabel("Depth (km)")
+    plt.legend()
+
+    plt.text(0.05, 0.05, f"RMS={rms:.2f}", transform=plt.gca().transAxes)
+
+    os.makedirs("output/plots", exist_ok=True)
+    plt.savefig(f"output/plots/{site}.png", dpi=300)
+    plt.close()
+
+    # ----------------------
+    # GRID PLOT
+    # ----------------------
+    ax = axes[plot_index]
+
+    ax.plot(rho_modem_log_plot, depth_km_plot)
+    ax.plot(rho_my_log_plot, depth_my_km_plot, color='red')
+
+    ax.fill_betweenx(
+        depth_my_km_plot,
+        rho_p5_plot,
+        rho_p95_plot,
+        color='red',
+        alpha=0.3
+    )
+
+    ax.invert_yaxis()
+    ax.set_title(f"{site}\nRMS={rms:.2f}", fontsize=9)
+
+    plot_index += 1
+
+
+# =========================
+# CLEAN EMPTY AXES
+# =========================
+for j in range(plot_index, len(axes)):
+    fig.delaxes(axes[j])
+
+plt.tight_layout()
+
+os.makedirs("output", exist_ok=True)
+plt.savefig("output/all_stations_grid.png", dpi=300)
+
+plt.show()
+
+print("✅ Done: All stations processed")
