@@ -67,8 +67,11 @@ def main():
                         help="Number of outer steps (overrides config)")
     parser.add_argument("--nsamples", type=int, default=None,
                         help="Samples per step (overrides config)")
-    parser.add_argument("--nchains",  type=int, default=None,
-                        help="Number of chains (all at T=1 by default)")
+    parser.add_argument("--nchains",     type=int, default=None,
+                        help="Number of cold chains (all at T=1). Ignored if --temperatures used.")
+    parser.add_argument("--temperatures", nargs="+", type=float, default=None,
+                        help="Full temperature schedule, e.g. --temperatures 1 1 1.5 3 10  "
+                             "Values=1 are cold chains, >1 are hot chains for parallel tempering.")
     parser.add_argument("--output",   default="results",
                         help="Output folder")
     parser.add_argument("--parallel", action="store_true",
@@ -84,8 +87,10 @@ def main():
         cfg.nsteps = args.nsteps
     if args.nsamples:
         cfg.nsamples = args.nsamples
-    if args.nchains:
-        cfg.temperature = [1.0] * args.nchains
+    if args.temperatures:
+        cfg.temperature = args.temperatures        # full PT schedule provided
+    elif args.nchains:
+        cfg.temperature = [1.0] * args.nchains     # all cold, no PT
     # Re-derive after any changes
     cfg._derive()
 
@@ -98,7 +103,8 @@ def main():
     results_all = [[] for _ in range(cfg.nChains)]   # results_all[ic][is]
 
     print("\nMCMC Procedure Starts")
-    print(f"  Chains      : {cfg.nChains}  (T=1: {cfg.nChains_atT1})")
+    print(f"  Chains      : {cfg.nChains}  (cold T=1: {cfg.nChains_atT1}, hot T>1: {cfg.nChains_atoT})")
+    print(f"  Temperatures: {cfg.temperature}")
     print(f"  Steps       : {cfg.nsteps}")
     print(f"  Samples/step: {cfg.nsamples}")
     print(f"  Total samples/chain: {cfg.nsteps * cfg.nsamples:,}")
