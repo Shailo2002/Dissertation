@@ -30,6 +30,7 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from scipy.interpolate import interp1d
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -78,6 +79,86 @@ def _predict_from_sample(model_flat, ncells, cfg, logdomain, max_z):
 
     Z, appres, phase = mt1d_forward(resistivities, thicknesses, cfg.MT.period)
     return Z, appres, phase
+
+
+# ------------------------------------------------------------------ #
+# Model comparison plot (True vs Inversion, separate figure)
+# ------------------------------------------------------------------ #
+
+def _plot_model_comparison(
+    folder: str,
+    prefix: str = "MT",
+    true_depths: list = None,
+    true_rho: list = None,
+    output: str = None,
+) -> float:
+    """
+    Plot inversion mean ± uncertainty vs true model (if given) on a depth profile.
+    Uses the posterior percentiles from the Stat_info file produced by process_chains.py.
+    Returns the RMS misfit in log10 space (or None if no true model).
+    """
+    stat_path = os.path.join(folder, f"{prefix}_TD_Chain_Stat_info.npz")
+    if not os.path.exists(stat_path):
+        print(f"  Stat info not found: {stat_path}. Run process_chains.py first.")
+        return None
+
+    S = np.load(stat_path, allow_pickle=True)
+    z_plot = S["z_plot"]          # metres, bin midpoints
+    p5     = S["p5"]              # log10(ohm-m)
+    p95    = S["p95"]
+    pmean  = S["pmean"]           # log10(ohm-m)
+    z_max  = float(S["z_max"])    # metres
+
+    mask     = z_plot <= z_max
+    depth_km = z_plot[mask] / 1000.0
+
+    fig, ax = plt.subplots(figsize=(6, 8))
+
+    # ---- Inversion: mean + 5–95 % uncertainty band ----
+    ax.plot(pmean[mask], depth_km, color="red", linewidth=1.5, label="Inversion mean")
+    ax.fill_betweenx(depth_km, p5[mask], p95[mask],
+                     color="red", alpha=0.3, label="5th–95th %ile")
+
+    rms = None
+
+    # ---- True model (synthetic only) ----
+    if true_depths is not None and true_rho is not None:
+        z_true_m    = np.array(true_depths, dtype=float)
+        rho_true_ohm = np.array(true_rho,  dtype=float)
+        rho_true_log = np.log10(rho_true_ohm)
+
+        # Step arrays for plotting (extend last layer to z_max)
+        z_step   = np.append(z_true_m, z_max)
+        rho_step = np.append(rho_true_log, rho_true_log[-1])
+        ax.step(rho_step, z_step / 1000.0, where="post",
+                color="blue", linewidth=2, label="True model")
+
+        # RMS: interpolate true model onto inversion depth grid
+        interp_true = interp1d(z_step, rho_step, kind="previous",
+                               bounds_error=False, fill_value="extrapolate")
+        rho_true_interp = interp_true(z_plot[mask])
+        misfit = pmean[mask] - rho_true_interp
+        rms = float(np.sqrt(np.mean(misfit ** 2)))
+
+        print(f"\n  Model RMS (log10 space) : {rms:.3f}")
+        ax.text(0.05, 0.04, f"RMS = {rms:.3f}",
+                transform=ax.transAxes, fontsize=10,
+                bbox=dict(boxstyle="round", facecolor="white", alpha=0.8))
+
+    ax.invert_yaxis()
+    ax.set_xlabel(r"log$_{10}$(Resistivity) (ohm-m)", fontsize=11)
+    ax.set_ylabel("Depth (km)", fontsize=11)
+    ax.set_title("Synthetic Test: True vs Inversion", fontsize=12)
+    ax.legend(fontsize=9, loc="upper right")
+    ax.grid(True, alpha=0.4)
+    plt.tight_layout()
+
+    if output is None:
+        output = os.path.join(folder, f"{prefix}_model_comparison.png")
+    plt.savefig(output, dpi=300, bbox_inches="tight")
+    plt.close()
+    print(f"  Model comparison plot saved: {output}")
+    return rms
 
 
 # ------------------------------------------------------------------ #
@@ -293,7 +374,9 @@ def validate(
         ax5.plot(np.arange(1, len(nr) + 1), nr, "-", alpha=0.7, linewidth=0.8)
     ax5.axhline(1.0, color="r", linestyle="--", linewidth=1.5, label="nRMS = 1")
     ax5.set_xscale("log")
-    ax5.set_ylim(0, min(np.percentile(nrms_chains[0], 95) * 2, 20))
+    finite_nrms = nrms_chains[0][np.isfinite(nrms_chains[0])]
+    ylim_top = min(np.nanpercentile(finite_nrms, 95) * 2, 20) if len(finite_nrms) > 0 else 20
+    ax5.set_ylim(0, ylim_top)
     ax5.set_xlabel("# samples (cumulative)")
     ax5.set_ylabel("nRMS")
     ax5.set_title("CHECK 4: nRMS Convergence", fontweight="bold")
@@ -342,7 +425,15 @@ def validate(
     plt.savefig(output, dpi=300, bbox_inches="tight")
     plt.close()
     print(f"\nValidation plot saved: {output}")
-    print(f"Open: open {output}")
+
+    # ---- Separate model comparison figure ----
+    print("\nGenerating model comparison plot ...")
+    _plot_model_comparison(
+        folder=folder,
+        prefix=prefix,
+        true_depths=true_depths,
+        true_rho=true_rho,
+    )
 
 
 def main():
