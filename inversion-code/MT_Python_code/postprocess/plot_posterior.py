@@ -15,6 +15,7 @@ Usage
   python postprocess/plot_posterior.py --folder results --true_model MT_data.npz
 """
 
+import json
 import os
 import sys
 import argparse
@@ -73,6 +74,16 @@ def plot_posterior(
         print(f"Stat info file not found: {stat_path}")
         print("Run process_chains.py first.")
         return
+
+    # ---- Auto-load true model from results folder if not given ----
+    if true_depths is None and true_rho is None:
+        tm_path = os.path.join(folder, "true_model.json")
+        if os.path.exists(tm_path):
+            with open(tm_path) as fj:
+                tm = json.load(fj)
+            true_depths = tm["layer_tops"]
+            true_rho    = tm["layer_rho"]
+            print(f"  Auto-loaded true model from {tm_path}")
 
     S = np.load(stat_path, allow_pickle=True)
     z_plot      = S["z_plot"]

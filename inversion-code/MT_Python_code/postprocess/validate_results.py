@@ -176,6 +176,17 @@ def validate(
 ):
     cfg = _load_data_and_cfg(folder, data_file)
 
+    # ---- Auto-load true model from results folder if not given ----
+    if true_depths is None and true_rho is None:
+        import json as _json
+        tm_path = os.path.join(folder, "true_model.json")
+        if os.path.exists(tm_path):
+            with open(tm_path) as fj:
+                tm = _json.load(fj)
+            true_depths = tm["layer_tops"]
+            true_rho    = tm["layer_rho"]
+            print(f"  Auto-loaded true model from {tm_path}")
+
     # ---- Load processed samples ----
     proc_path = os.path.join(folder, f"{prefix}_TD_Chain_Processed.npz")
     if not os.path.exists(proc_path):

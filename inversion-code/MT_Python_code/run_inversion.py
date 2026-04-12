@@ -19,6 +19,7 @@ Key speed improvements vs MATLAB:
 """
 
 import argparse
+import datetime
 import os
 import sys
 import time
@@ -33,6 +34,72 @@ from mcmc.sampler import run_chain_step
 from mcmc.parallel_tempering import swap_temperatures
 from data_io.data_reader import read_data
 from data_io.chain_io import save_chain
+
+
+# ------------------------------------------------------------------ #
+# Acceptance rate summary  (mirrors MATLAB output)
+# ------------------------------------------------------------------ #
+
+def _write_acceptance_summary(results_all: list, cfg, folder: str):
+    """
+    Compute and save acceptance rate summary from in-memory results_all.
+
+    results_all[ic][is_]["acceptance_all"] has 6 values:
+      [Overall, Birth, Death, Move, Change_Rho, Change_Noise]
+    """
+    labels = ["Overall   ", "Birth     ", "Death     ",
+              "Move      ", "Change_Rho", "Change_Nse"]
+
+    nChains = cfg.nChains
+    nsteps  = cfg.nsteps
+
+    # AR[chain, step, type]  — shape (nChains, nsteps, 6)
+    AR = np.zeros((nChains, nsteps, 6))
+    for ic in range(nChains):
+        for is_, samp in enumerate(results_all[ic]):
+            AR[ic, is_, :] = samp["acceptance_all"]
+
+    sep  = "=" * 60
+    sep2 = "-" * 50
+    sep3 = "-" * 40
+    now  = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    lines = [
+        "",
+        sep,
+        "     ACCEPTANCE RATE SUMMARY (across all chains & steps)",
+        sep,
+        f"Generated : {now}",
+        f"Chains    : {nChains}  |  Steps : {nsteps}",
+        "",
+        f"{'Type':<12}  {'Min(%)':>8}  {'Max(%)':>8}  {'Mean(%)':>8}  {'Std(%)':>8}",
+        sep2,
+    ]
+    for k, label in enumerate(labels):
+        v = AR[:, :, k].flatten()
+        lines.append(
+            f"{label:<12}  {v.min():8.2f}  {v.max():8.2f}  {v.mean():8.2f}  {v.std():8.2f}"
+        )
+
+    lines += [
+        "",
+        f"{'Chain':<12}  {'Min(%)':>8}  {'Max(%)':>8}  {'Mean(%)':>8}",
+        sep3,
+    ]
+    for ic in range(nChains):
+        v = AR[ic, :, 0]   # overall AR per step for this chain
+        lines.append(f"Chain {ic+1:<6d}  {v.min():8.2f}  {v.max():8.2f}  {v.mean():8.2f}")
+
+    lines += ["", sep, ""]
+
+    text = "\n".join(lines)
+    print(text)
+
+    os.makedirs(folder, exist_ok=True)
+    out_path = os.path.join(folder, "Acceptance_Rate_Summary.txt")
+    with open(out_path, "w") as fh:
+        fh.write(text)
+    print(f"Acceptance rate summary saved to: {out_path}")
 
 
 # ------------------------------------------------------------------ #
@@ -72,10 +139,14 @@ def main():
     parser.add_argument("--temperatures", nargs="+", type=float, default=None,
                         help="Full temperature schedule, e.g. --temperatures 1 1 1.5 3 10  "
                              "Values=1 are cold chains, >1 are hot chains for parallel tempering.")
-    parser.add_argument("--output",   default="results",
+    parser.add_argument("--output",     default="results",
                         help="Output folder")
-    parser.add_argument("--parallel", action="store_true",
+    parser.add_argument("--parallel",   action="store_true",
                         help="Run chains in parallel (multiprocessing)")
+    parser.add_argument("--true_model", default=None,
+                        help="Path to true_model.json from create_synthetic_data.py "
+                             "(synthetic only). Copied to results folder so all "
+                             "postprocessing steps show the true model automatically.")
     args = parser.parse_args()
 
     # ---- Build config ----
@@ -96,6 +167,14 @@ def main():
 
     # ---- Load data ----
     cfg = read_data(args.data, args.dcdata, cfg)
+
+    # ---- Copy true model JSON to results folder (synthetic runs) ----
+    if args.true_model:
+        import json, shutil
+        os.makedirs(args.output, exist_ok=True)
+        dest = os.path.join(args.output, "true_model.json")
+        shutil.copy(args.true_model, dest)
+        print(f"True model saved to results: {dest}")
 
     # ---- Initialise chains ----
     models, likelihoods, sigmas = initialise_chains(cfg)
@@ -157,6 +236,10 @@ def main():
     print("MCMC Procedure Ends")
     print(f"Results saved to: {os.path.abspath(args.output)}/")
     print(f"Total time: {(time.time() - t_start)/60:.1f} min")
+
+    # ---- Acceptance rate summary ----
+    _write_acceptance_summary(results_all, cfg, args.output)
+
     print("\nNext steps:")
     print("  python postprocess/chain_convergence.py --folder", args.output)
     print("  python postprocess/process_chains.py    --folder", args.output)

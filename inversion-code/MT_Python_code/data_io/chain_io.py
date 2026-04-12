@@ -76,6 +76,7 @@ def save_chain(
         like_list, sigma_list, misfit_list = [], [], []
         ncells_list, model_list, step_list = [], [], []
 
+        ar_list = []
         for samp in chain_samples:
             like_list.append(samp["like"])
             sigma_list.append(samp["sigma"])
@@ -83,6 +84,7 @@ def save_chain(
             ncells_list.append(samp["ncells"])
             model_list.append(samp["model"])
             step_list.append(samp["step"])
+            ar_list.append(samp["acceptance_all"])
 
         fname = os.path.join(
             destination_folder,
@@ -96,6 +98,7 @@ def save_chain(
             ncells=np.concatenate(ncells_list),
             model=np.concatenate(model_list, axis=0),
             step=np.concatenate(step_list),
+            acceptance_all=np.vstack(ar_list),   # shape (nsteps_saved, 6)
             nsteps_saved=np.array(steps_done),
             swap_count=(swap_count[ic] if swap_count else np.zeros(cfg.nsteps)),
         )

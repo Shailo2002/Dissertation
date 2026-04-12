@@ -13,6 +13,7 @@ Usage
   python postprocess/chain_convergence.py --folder results --prefix MT
 """
 
+import datetime
 import os
 import sys
 import argparse
@@ -25,6 +26,85 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from data_io.chain_io import load_chain, load_config
 
 
+def acceptance_rate_summary(folder: str, prefix: str = "MT"):
+    """
+    Load saved chain files and write Acceptance_Rate_Summary.txt.
+    Can be called any time after run_inversion.py has saved the chains.
+    """
+    cfg      = load_config(folder)
+    nChains  = cfg["nChains"]
+    labels   = ["Overall   ", "Birth     ", "Death     ",
+                "Move      ", "Change_Rho", "Change_Nse"]
+
+    ar_per_chain = []   # list of 2-D arrays, shape (nsteps_saved, 6)
+
+    for ic in range(1, nChains + 1):
+        try:
+            chain = load_chain(folder, ic, prefix)
+        except FileNotFoundError:
+            print(f"  Chain {ic} not found, skipping")
+            ar_per_chain.append(None)
+            continue
+
+        if "acceptance_all" not in chain:
+            print(f"  Chain {ic}: acceptance_all not saved "
+                  "(re-run inversion with updated code to get this)")
+            ar_per_chain.append(None)
+            continue
+
+        ar_per_chain.append(chain["acceptance_all"])   # (nsteps_saved, 6)
+
+    valid = [a for a in ar_per_chain if a is not None]
+    if not valid:
+        print("No acceptance rate data found in chain files.")
+        return
+
+    AR_all = np.vstack(valid)   # (total_steps, 6) across all chains
+
+    sep  = "=" * 60
+    sep2 = "-" * 50
+    sep3 = "-" * 40
+    now  = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    lines = [
+        "",
+        sep,
+        "     ACCEPTANCE RATE SUMMARY (across all chains & steps)",
+        sep,
+        f"Generated : {now}",
+        f"Chains    : {nChains}",
+        "",
+        f"{'Type':<12}  {'Min(%)':>8}  {'Max(%)':>8}  {'Mean(%)':>8}  {'Std(%)':>8}",
+        sep2,
+    ]
+    for k, label in enumerate(labels):
+        v = AR_all[:, k]
+        lines.append(
+            f"{label:<12}  {v.min():8.2f}  {v.max():8.2f}  {v.mean():8.2f}  {v.std():8.2f}"
+        )
+
+    lines += [
+        "",
+        f"{'Chain':<12}  {'Min(%)':>8}  {'Max(%)':>8}  {'Mean(%)':>8}",
+        sep3,
+    ]
+    for ic, ar in enumerate(ar_per_chain):
+        if ar is None:
+            lines.append(f"Chain {ic+1:<6d}  {'N/A':>8}")
+            continue
+        v = ar[:, 0]   # overall AR column
+        lines.append(f"Chain {ic+1:<6d}  {v.min():8.2f}  {v.max():8.2f}  {v.mean():8.2f}")
+
+    lines += ["", sep, ""]
+    text = "\n".join(lines)
+    print(text)
+
+    out_path = os.path.join(folder, "Acceptance_Rate_Summary.txt")
+    with open(out_path, "w") as fh:
+        fh.write(text)
+    print(f"Acceptance rate summary saved to: {out_path}")
+
+
 def plot_convergence(folder: str, prefix: str = "MT", output: str = None):
     """Load all chains and plot convergence."""
     cfg = load_config(folder)
@@ -32,6 +112,9 @@ def plot_convergence(folder: str, prefix: str = "MT", output: str = None):
     nsamples = cfg["nsamples"]
 
     print(f"Processing {prefix} chains (nChains={nChains}) ...")
+
+    # ---- Acceptance rate summary (printed + saved to txt) ----
+    acceptance_rate_summary(folder, prefix)
 
     # Collect data across all chains
     like_all, nrms_all, sigma_all = [], [], []

@@ -15,6 +15,7 @@ The script:
   4. Plots apparent resistivity and phase.
 """
 
+import json
 import os
 import sys
 import argparse
@@ -122,6 +123,15 @@ def create_synthetic_mt(
         plt.close()
         print(f"Plot saved: {fig_path}")
 
+    # ---- Save true_model.json ----
+    tm_path = os.path.join(output_dir, "true_model.json")
+    with open(tm_path, "w") as fj:
+        json.dump({
+            "layer_tops": layer_tops.tolist(),
+            "layer_rho":  layer_rho.tolist(),
+        }, fj, indent=2)
+    print(f"Written: {tm_path}")
+
     # ---- Print true model summary ----
     print("\nTrue model:")
     print(f"  {'Layer':>8}  {'Top (m)':>12}  {'Resistivity (ohm-m)':>22}")
@@ -136,25 +146,34 @@ def main():
     parser = argparse.ArgumentParser(
         description="Generate synthetic 1D MT dataset"
     )
-    parser.add_argument("--noise",    type=float, default=3.0,
+    parser.add_argument("--noise",       type=float, default=3.0,
                         help="Noise level in percent (default 3)")
-    parser.add_argument("--nperiods", type=int,   default=13,
+    parser.add_argument("--nperiods",    type=int,   default=13,
                         help="Number of periods (default 13)")
-    parser.add_argument("--pmin",     type=float, default=1.0,
+    parser.add_argument("--pmin",        type=float, default=1.0,
                         help="Minimum period in seconds")
-    parser.add_argument("--pmax",     type=float, default=10_000.0,
+    parser.add_argument("--pmax",        type=float, default=10_000.0,
                         help="Maximum period in seconds")
-    parser.add_argument("--output",   default=".",
+    parser.add_argument("--output",      default=".",
                         help="Output directory for data files")
-    parser.add_argument("--no-plot",  action="store_true",
+    parser.add_argument("--no-plot",     action="store_true",
                         help="Skip plotting")
+    parser.add_argument("--layer_tops",  nargs="+", type=float, default=None,
+                        help="Layer top depths in metres, e.g. --layer_tops 0 25000 80000 200000")
+    parser.add_argument("--layer_rho",   nargs="+", type=float, default=None,
+                        help="Layer resistivities in ohm-m, e.g. --layer_rho 500 5 5000 20")
     args = parser.parse_args()
+
+    layer_tops = np.array(args.layer_tops) if args.layer_tops else None
+    layer_rho  = np.array(args.layer_rho)  if args.layer_rho  else None
 
     create_synthetic_mt(
         noise_prcnt=args.noise,
         nperiods=args.nperiods,
         period_min=args.pmin,
         period_max=args.pmax,
+        layer_tops=layer_tops,
+        layer_rho=layer_rho,
         output_dir=args.output,
         plot=not args.no_plot,
     )
