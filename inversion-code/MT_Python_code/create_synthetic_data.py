@@ -154,8 +154,8 @@ def main():
                         help="Minimum period in seconds")
     parser.add_argument("--pmax",        type=float, default=10_000.0,
                         help="Maximum period in seconds")
-    parser.add_argument("--output",      default=".",
-                        help="Output directory for data files")
+    parser.add_argument("--output",      default="data/synthetic/new_model",
+                        help="Output directory for data files (e.g. data/synthetic/craton)")
     parser.add_argument("--no-plot",     action="store_true",
                         help="Skip plotting")
     parser.add_argument("--layer_tops",  nargs="+", type=float, default=None,

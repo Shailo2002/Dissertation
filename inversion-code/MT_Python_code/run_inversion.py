@@ -120,7 +120,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="1D Transdimensional Bayesian MT/DC Inversion"
     )
-    parser.add_argument("--data",     default="MT_data_Z.dat",
+    parser.add_argument("--data",     default="data/synthetic/default_3layer/MT_data_Z.dat",
                         help="MT data file path")
     parser.add_argument("--dcdata",   default=" ",
                         help="DC data file path (optional)")
@@ -139,8 +139,8 @@ def main():
     parser.add_argument("--temperatures", nargs="+", type=float, default=None,
                         help="Full temperature schedule, e.g. --temperatures 1 1 1.5 3 10  "
                              "Values=1 are cold chains, >1 are hot chains for parallel tempering.")
-    parser.add_argument("--output",     default="results",
-                        help="Output folder")
+    parser.add_argument("--output",     default=None,
+                        help="Output folder (default: auto-named under results/)")
     parser.add_argument("--parallel",   action="store_true",
                         help="Run chains in parallel (multiprocessing)")
     parser.add_argument("--true_model", default=None,
@@ -148,6 +148,17 @@ def main():
                              "(synthetic only). Copied to results folder so all "
                              "postprocessing steps show the true model automatically.")
     args = parser.parse_args()
+
+    # ---- Auto-generate output folder name if not given ----
+    if args.output is None:
+        import datetime
+        # Derive a short dataset name from the data file path
+        # e.g. data/synthetic/craton/MT_data_Z.dat  →  "craton"
+        data_parent = os.path.basename(os.path.dirname(os.path.abspath(args.data)))
+        timestamp   = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        nsteps_tag  = f"{args.nsteps or 'default'}steps"
+        args.output = os.path.join("results", f"{data_parent}_{nsteps_tag}_{timestamp}")
+    print(f"Output folder: {args.output}")
 
     # ---- Build config ----
     cfg = get_default_config()
@@ -169,11 +180,21 @@ def main():
     cfg = read_data(args.data, args.dcdata, cfg)
 
     # ---- Copy true model JSON to results folder (synthetic runs) ----
+    import shutil
+    tm_src = None
     if args.true_model:
-        import json, shutil
+        tm_src = args.true_model
+    else:
+        # Auto-detect: look for true_model.json next to the data file
+        data_dir = os.path.dirname(os.path.abspath(args.data))
+        auto_tm = os.path.join(data_dir, "true_model.json")
+        if os.path.exists(auto_tm):
+            tm_src = auto_tm
+
+    if tm_src:
         os.makedirs(args.output, exist_ok=True)
         dest = os.path.join(args.output, "true_model.json")
-        shutil.copy(args.true_model, dest)
+        shutil.copy(tm_src, dest)
         print(f"True model saved to results: {dest}")
 
     # ---- Initialise chains ----
