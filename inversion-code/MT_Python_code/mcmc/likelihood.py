@@ -176,6 +176,13 @@ def compute_residual(dhat: dict, uncertainty: dict, cfg) -> tuple[float, np.ndar
             np.sqrt((LF_MT + LF_DC) / max(np_MT + np_DC, 1)),
         ])
 
+    # Extreme RJMCMC proposals can produce non-finite forward responses.
+    # Return a very large finite LF so Metropolis-Hastings cleanly rejects
+    # the proposal instead of propagating NaN through the chain state.
+    if not np.isfinite(LF):
+        LF = 1.0e30
+        nrms = np.nan_to_num(nrms, nan=1.0e15, posinf=1.0e15, neginf=1.0e15)
+
     return LF, nrms
 
 

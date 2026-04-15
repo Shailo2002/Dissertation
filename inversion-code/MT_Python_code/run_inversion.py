@@ -40,7 +40,8 @@ from data_io.chain_io import save_chain
 # Acceptance rate summary  (mirrors MATLAB output)
 # ------------------------------------------------------------------ #
 
-def _write_acceptance_summary(results_all: list, cfg, folder: str):
+def _write_acceptance_summary(results_all: list, cfg, folder: str,
+                              elapsed_sec: float | None = None):
     """
     Compute and save acceptance rate summary from in-memory results_all.
 
@@ -64,6 +65,14 @@ def _write_acceptance_summary(results_all: list, cfg, folder: str):
     sep3 = "-" * 40
     now  = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    if elapsed_sec is not None:
+        h = int(elapsed_sec // 3600)
+        m = int((elapsed_sec % 3600) // 60)
+        s = elapsed_sec - 3600 * h - 60 * m
+        total_time_str = f"{h:d}h {m:02d}m {s:05.2f}s  ({elapsed_sec/60:.2f} min)"
+    else:
+        total_time_str = "n/a"
+
     lines = [
         "",
         sep,
@@ -71,6 +80,7 @@ def _write_acceptance_summary(results_all: list, cfg, folder: str):
         sep,
         f"Generated : {now}",
         f"Chains    : {nChains}  |  Steps : {nsteps}",
+        f"Total time: {total_time_str}",
         "",
         f"{'Type':<12}  {'Min(%)':>8}  {'Max(%)':>8}  {'Mean(%)':>8}  {'Std(%)':>8}",
         sep2,
@@ -254,17 +264,22 @@ def main():
               f"({pct:.0f}%)  elapsed={elapsed/60:.1f} min  "
               f"ETA={eta/60:.1f} min\n")
 
+    total_elapsed = time.time() - t_start
     print("MCMC Procedure Ends")
     print(f"Results saved to: {os.path.abspath(args.output)}/")
-    print(f"Total time: {(time.time() - t_start)/60:.1f} min")
+    print(f"Total time: {total_elapsed/60:.1f} min")
 
     # ---- Acceptance rate summary ----
-    _write_acceptance_summary(results_all, cfg, args.output)
+    _write_acceptance_summary(results_all, cfg, args.output,
+                              elapsed_sec=total_elapsed)
 
     print("\nNext steps:")
-    print("  python postprocess/chain_convergence.py --folder", args.output)
-    print("  python postprocess/process_chains.py    --folder", args.output)
-    print("  python postprocess/plot_posterior.py    --folder", args.output)
+    print(f"  python postprocess/chain_convergence.py --folder {args.output}")
+    print(f"  python postprocess/process_chains.py    --folder {args.output}")
+    print(f"  python postprocess/plot_posterior.py    --folder {args.output}")
+    print(f"  python postprocess/plot_noise.py        --folder {args.output}")
+    print(f"  python postprocess/validate_results.py  --folder {args.output} "
+          f"--data {args.data}")
 
 
 if __name__ == "__main__":

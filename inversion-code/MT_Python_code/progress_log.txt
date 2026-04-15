@@ -106,6 +106,117 @@ ESTIMATED TIME (Python vs MATLAB)
   (estimate based on NumPy speed + 10-core parallelism)
 
 --------------------------------------------------------------------------------
+[2026-04-15]  NEW SYNTHETIC TEST DATASET: "mobile_belt" (5-layer)
+--------------------------------------------------------------------------------
+
+WHAT WAS DONE
+-------------
+  Generated a third synthetic MT dataset for inversion testing, with a more
+  challenging 5-layer structure than the existing "default_3layer" and 4-layer
+  "craton" tests.  Intended as a stress test for the RJMCMC to recover
+  multiple interfaces and alternating conductors/resistors.
+
+MODEL (geologically motivated: Proterozoic mobile belt / rifted margin)
+------------------------------------------------------------------------
+  Layer 1:      0 –   2 km,    20 ohm-m   (sediment / weathered cover)
+  Layer 2:      2 –  15 km,  2000 ohm-m   (resistive upper crust)
+  Layer 3:     15 –  40 km,    50 ohm-m   (lower-crust conductor)
+  Layer 4:     40 – 150 km,  3000 ohm-m   (resistive lithospheric mantle)
+  Layer 5:    150+ km,         30 ohm-m   (asthenospheric conductor)
+
+ACQUISITION PARAMETERS
+----------------------
+  Periods : 20 log-spaced, 0.1 – 10 000 s  (covers sediment → asthenosphere)
+  Noise   : 4 % Gaussian on Z
+  Seed    : 42 (default in create_synthetic_data.py)
+
+OUTPUT
+------
+  data/synthetic/mobile_belt/
+      MT_data_Z.dat            (period, Re(Z), Im(Z), err_Z)
+      MT_data.dat              (period, app_res, err, phase, err)
+      true_model.json          (layer tops + resistivities)
+      synthetic_data_plot.png  (app-res and phase, true vs noisy)
+
+COMMAND USED
+------------
+  python create_synthetic_data.py \
+         --noise 4 --nperiods 20 --pmin 0.1 --pmax 10000 \
+         --layer_tops 0 2000 15000 40000 150000 \
+         --layer_rho  20 2000 50 3000 30 \
+         --output data/synthetic/mobile_belt
+
+WHY THIS TEST IS USEFUL
+-----------------------
+  * Alternating conductor-resistor sequence → checks that RJMCMC can resolve
+    multiple interfaces instead of collapsing to a smoother 3-layer model.
+  * Broad period range (0.1 – 1e4 s) probes depths from ~1 km to > 200 km,
+    covering crust, lithospheric mantle, and asthenosphere — the same
+    depth span targeted in the Southern African study.
+  * 4 % noise is moderately high, giving a realistic challenge for
+    noise-hyperparameter estimation (change_noise / change_noise2 moves).
+
+--------------------------------------------------------------------------------
+[2026-04-15]  BUG FIX: cell_birth sort order + forward NaN handling
+--------------------------------------------------------------------------------
+
+SYMPTOM
+-------
+  On the mobile_belt 5-layer synthetic test (10 steps × 1000 samples × 5 chains)
+  the inversion became very slow compared with the default 3-layer case.
+  Chains 1 and 2 spent ~13 000 forward-model calls per step to accept 500
+  samples (acceptance rate ~3.5 %), and the log was filled with:
+
+    mt_forward.py:57: RuntimeWarning: overflow encountered in exp
+    mt_forward.py:60: RuntimeWarning: invalid value encountered in scalar multiply
+    mt_forward.py:61: RuntimeWarning: invalid value encountered in scalar divide
+
+ROOT CAUSE
+----------
+  cell_birth() inserted the new Voronoi node *after* the nearest existing
+  node. The "nearest" neighbour is chosen by absolute distance, so it may
+  be deeper than the proposed depth z_new. When that happened, the model's
+  internal depth column became UNSORTED, and model_to_layers() then produced
+  NEGATIVE thicknesses via np.diff(z).  Negative h in mt1d_forward turned
+  exp(-2*h*dj) into exp(+large) → overflow → Inf → NaN in the impedance.
+  The NaN propagated into compute_residual(), giving a NaN likelihood.
+  Python's builtin min(0.0, NaN) returns 0.0 (unlike MATLAB's min), which
+  caused Metropolis-Hastings to accept some NaN proposals and then reject
+  nearly everything afterwards, wasting forward-model calls.
+
+FIX
+---
+  1. mcmc/proposals.py :: cell_birth
+         The new node is now inserted at its correct sorted position using
+         np.searchsorted(internal_depths, z_new), not at nearest+1.
+         This guarantees np.diff(z) ≥ 0.
+
+  2. forward/mt_forward.py :: mt1d_forward
+         Wrapped the period loop in
+             np.errstate(over='ignore', under='ignore',
+                         invalid='ignore', divide='ignore')
+         to silence the (now much rarer) spurious warnings and avoid the
+         Python warnings-machinery overhead per forward call.
+
+  3. mcmc/likelihood.py :: compute_residual
+         If LF is non-finite (NaN or Inf), return LF = 1e30 and nrms filled
+         with a large finite sentinel.  This ensures any residual pathological
+         proposal is cleanly rejected by MH instead of corrupting the chain.
+
+  4. run_inversion.py :: _write_acceptance_summary
+         New argument elapsed_sec.  The Acceptance_Rate_Summary.txt now
+         includes a "Total time" line (h/m/s and minutes).
+
+EXPECTED IMPACT
+---------------
+  * No more "overflow / invalid value" warnings during inversion.
+  * Per-step acceptance rates become consistent across chains (previously
+    chain 1/2 were stuck at 3–4 % because of repeated NaN rejections).
+  * Forward-model call count per step should drop by ~3–4× on hard cases.
+  * The summary file now records wall-clock time, which we will quote in
+    the thesis benchmark section.
+
+--------------------------------------------------------------------------------
 [TODO]  RESULTS AND INTERPRETATION  (to be filled as analysis progresses)
 --------------------------------------------------------------------------------
 

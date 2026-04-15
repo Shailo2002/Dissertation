@@ -41,29 +41,34 @@ def mt1d_forward(resistivities, thicknesses, periods):
 
     Z = np.zeros(len(omega), dtype=complex)
 
-    for ip, w in enumerate(omega):
-        # Basement (half-space) impedance
-        Zn = np.sqrt(1j * w * mu * resistivities[-1])
-        imp = np.empty(n, dtype=complex)
-        imp[-1] = Zn
+    # Extreme RJMCMC proposals can push the exp() argument into overflow /
+    # underflow territory. The likelihood layer detects the resulting NaN/Inf
+    # and rejects such proposals, so silence the warnings here rather than
+    # letting Python's warnings machinery slow every forward call.
+    with np.errstate(over="ignore", under="ignore", invalid="ignore", divide="ignore"):
+        for ip, w in enumerate(omega):
+            # Basement (half-space) impedance
+            Zn = np.sqrt(1j * w * mu * resistivities[-1])
+            imp = np.empty(n, dtype=complex)
+            imp[-1] = Zn
 
-        # Recurse upward from layer n-2 to 0
-        for j in range(n - 2, -1, -1):
-            rho_j = resistivities[j]
-            h_j = thicknesses[j]
+            # Recurse upward from layer n-2 to 0
+            for j in range(n - 2, -1, -1):
+                rho_j = resistivities[j]
+                h_j = thicknesses[j]
 
-            dj = np.sqrt(1j * w * mu / rho_j)   # induction parameter
-            wj = dj * rho_j                       # intrinsic impedance
-            ej = np.exp(-2.0 * h_j * dj)         # exponential decay factor
+                dj = np.sqrt(1j * w * mu / rho_j)   # induction parameter
+                wj = dj * rho_j                       # intrinsic impedance
+                ej = np.exp(-2.0 * h_j * dj)         # exponential decay factor
 
-            rj = (wj - imp[j + 1]) / (wj + imp[j + 1])  # reflection coeff
-            re = rj * ej
-            imp[j] = wj * (1.0 - re) / (1.0 + re)
+                rj = (wj - imp[j + 1]) / (wj + imp[j + 1])  # reflection coeff
+                re = rj * ej
+                imp[j] = wj * (1.0 - re) / (1.0 + re)
 
-        Z[ip] = imp[0]
+            Z[ip] = imp[0]
 
-    absZ = np.abs(Z)
-    appres = (absZ ** 2) / (mu * omega)
-    phase = np.degrees(np.arctan2(Z.imag, Z.real))
+        absZ = np.abs(Z)
+        appres = (absZ ** 2) / (mu * omega)
+        phase = np.degrees(np.arctan2(Z.imag, Z.real))
 
     return Z, appres, phase

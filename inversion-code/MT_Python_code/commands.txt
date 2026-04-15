@@ -1,0 +1,98 @@
+================================================================================
+  MT_Python_code — Command Reference
+  All commands assume you are in: MT_Python_code/
+  (cd /Users/shailesh/Developer/code/Dissertation/inversion-code/MT_Python_code)
+================================================================================
+
+--------------------------------------------------------------------------------
+0. INSTALL DEPENDENCIES  (once per machine)
+--------------------------------------------------------------------------------
+pip install -r requirements.txt
+
+
+--------------------------------------------------------------------------------
+1. CREATE SYNTHETIC DATASETS
+--------------------------------------------------------------------------------
+
+# Default 3-layer model (100 / 10 / 1000 ohm-m at 0 / 10 / 50 km)
+python create_synthetic_data.py \
+    --noise 3 --nperiods 13 \
+    --output data/synthetic/default_3layer
+
+# Craton-like 4-layer model
+python create_synthetic_data.py \
+    --noise 3 --nperiods 20 --pmin 0.01 --pmax 10000 \
+    --layer_tops 0 25000 80000 200000 \
+    --layer_rho  500 5 5000 20 \
+    --output data/synthetic/craton
+
+# Mobile-belt 5-layer model  (sediment / upper crust / lower crust / lith. mantle / asthenosphere)
+python create_synthetic_data.py \
+    --noise 4 --nperiods 20 --pmin 0.1 --pmax 10000 \
+    --layer_tops 0 2000 15000 40000 150000 \
+    --layer_rho  20 2000 50 3000 30 \
+    --output data/synthetic/mobile_belt
+
+
+================================================================================
+  MOBILE_BELT PIPELINE  (100 steps × 5 chains, parallel)
+================================================================================
+
+--------------------------------------------------------------------------------
+2. RUN INVERSION
+--------------------------------------------------------------------------------
+python run_inversion.py \
+    --data data/synthetic/mobile_belt/MT_data_Z.dat \
+    --true_model data/synthetic/mobile_belt/true_model.json \
+    --nsteps 100 --nsamples 1000 --nchains 5 --parallel \
+    --output results/synthetic_mobile_belt_100steps
+
+
+--------------------------------------------------------------------------------
+3. POSTPROCESSING  (run in this order)
+--------------------------------------------------------------------------------
+python postprocess/chain_convergence.py --folder results/synthetic_mobile_belt_100steps
+python postprocess/process_chains.py    --folder results/synthetic_mobile_belt_100steps
+python postprocess/plot_posterior.py    --folder results/synthetic_mobile_belt_100steps
+python postprocess/plot_noise.py        --folder results/synthetic_mobile_belt_100steps
+
+
+--------------------------------------------------------------------------------
+4. VALIDATION  (posterior-predictive check against the observed data)
+--------------------------------------------------------------------------------
+python postprocess/validate_results.py \
+    --folder results/synthetic_mobile_belt_100steps \
+    --data   data/synthetic/mobile_belt/MT_data_Z.dat
+
+
+================================================================================
+  TEMPLATE: RUN ANY DATASET
+================================================================================
+# Replace <NAME>, <NSTEPS>, <NCHAINS> to run a different case.
+#
+# python run_inversion.py \
+#     --data data/synthetic/<NAME>/MT_data_Z.dat \
+#     --true_model data/synthetic/<NAME>/true_model.json \
+#     --nsteps <NSTEPS> --nsamples 1000 --nchains <NCHAINS> --parallel \
+#     --output results/synthetic_<NAME>_<NSTEPS>steps
+#
+# python postprocess/chain_convergence.py --folder results/synthetic_<NAME>_<NSTEPS>steps
+# python postprocess/process_chains.py    --folder results/synthetic_<NAME>_<NSTEPS>steps
+# python postprocess/plot_posterior.py    --folder results/synthetic_<NAME>_<NSTEPS>steps
+# python postprocess/plot_noise.py        --folder results/synthetic_<NAME>_<NSTEPS>steps
+# python postprocess/validate_results.py  --folder results/synthetic_<NAME>_<NSTEPS>steps \
+#        --data data/synthetic/<NAME>/MT_data_Z.dat
+
+
+================================================================================
+  PRODUCTION RUN (real Southern African MT data — slower, more accurate)
+================================================================================
+# python run_inversion.py \
+#     --data MT_data_Z.dat \
+#     --nsteps 1000 --nsamples 1000 --nchains 10 --parallel \
+#     --output results/real_SA_1000steps
+#
+# Then run the four postprocessing scripts and validate_results.py against
+# results/real_SA_1000steps (no --true_depths / --true_rho for real data).
+
+================================================================================

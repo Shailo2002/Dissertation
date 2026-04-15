@@ -111,11 +111,15 @@ def cell_birth(model: np.ndarray, cfg) -> Tuple[bool, float, np.ndarray]:
     if rho_new < cfg.min_res_log or rho_new > cfg.max_res_log:
         return False, 0.0, model
 
-    # Insert the new node after *nearest* (keeping depth order)
+    # Insert the new node at its correct sorted position. The "nearest"
+    # neighbour may be above or below z_new, so we can't rely on nearest+1 —
+    # doing so produces an unsorted depth array and negative layer thicknesses.
+    internal_depths = model[1:, 0]
+    insert_at = 1 + int(np.searchsorted(internal_depths, z_new))
     model_new = np.vstack([
-        model[:nearest + 1, :],
+        model[:insert_at, :],
         np.array([[z_new, rho_new]]),
-        model[nearest + 1:, :],
+        model[insert_at:, :],
     ])
     model_new[0, 0] = np.nan    # surface node is always NaN
 
