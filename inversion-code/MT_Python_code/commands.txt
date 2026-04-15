@@ -85,6 +85,107 @@ python postprocess/validate_results.py \
 
 
 ================================================================================
+  SEQUENTIAL SYNTHETIC TEST  (all 3 models, 200 steps x 5 chains, sequential)
+  -------------------------------------------------------------------------
+  Runs each dataset fully end-to-end (inversion -> 4 postprocess scripts ->
+  validate) before starting the next one.  Safe on an 8-core PC because only
+  5 chain workers run at any time.  Logs to logs/test_<name>_200steps.log
+  while also printing to the terminal.
+================================================================================
+
+mkdir -p logs results
+
+for NAME in default_3layer craton mobile_belt; do
+    RESULTS=results/test_${NAME}_200steps
+    DATA=data/synthetic/${NAME}/MT_data_Z.dat
+    TRUE=data/synthetic/${NAME}/true_model.json
+    LOG=logs/test_${NAME}_200steps.log
+
+    echo ""
+    echo "============================================================"
+    echo "  [$(date '+%H:%M:%S')] START: $NAME"
+    echo "============================================================"
+
+    python run_inversion.py \
+        --data "$DATA" \
+        --true_model "$TRUE" \
+        --nsteps 200 --nsamples 1000 --nchains 5 --parallel \
+        --output "$RESULTS" 2>&1 | tee "$LOG"
+
+    echo ""
+    echo "  [$(date '+%H:%M:%S')] POSTPROCESS: $NAME"
+    python postprocess/chain_convergence.py --folder "$RESULTS" 2>&1 | tee -a "$LOG"
+    python postprocess/process_chains.py    --folder "$RESULTS" 2>&1 | tee -a "$LOG"
+    python postprocess/plot_posterior.py    --folder "$RESULTS" 2>&1 | tee -a "$LOG"
+    python postprocess/plot_noise.py        --folder "$RESULTS" 2>&1 | tee -a "$LOG"
+
+    echo ""
+    echo "  [$(date '+%H:%M:%S')] VALIDATE: $NAME"
+    python postprocess/validate_results.py --folder "$RESULTS" --data "$DATA" 2>&1 | tee -a "$LOG"
+
+    echo ""
+    echo "  [$(date '+%H:%M:%S')] DONE: $NAME"
+done
+
+echo ""
+echo "============================================================"
+echo "  ALL 3 INVERSIONS + POSTPROCESSING + VALIDATION COMPLETE"
+echo "============================================================"
+
+
+================================================================================
+  FINAL SYNTHETIC TEST  (all 3 models, 1000 steps x 10 chains, parallel)
+  -------------------------------------------------------------------------
+  Launches all 3 inversions in the background, logs to logs/, then waits.
+  WARNING: 3 jobs x 10 chains = 30 worker processes.  Run sequentially
+           instead if you have fewer than ~24 logical cores.
+================================================================================
+
+mkdir -p logs results
+
+python run_inversion.py \
+    --data data/synthetic/default_3layer/MT_data_Z.dat \
+    --true_model data/synthetic/default_3layer/true_model.json \
+    --nsteps 1000 --nsamples 1000 --nchains 10 --parallel \
+    --output results/final_default_3layer \
+    > logs/final_default_3layer.log 2>&1 &
+
+python run_inversion.py \
+    --data data/synthetic/craton/MT_data_Z.dat \
+    --true_model data/synthetic/craton/true_model.json \
+    --nsteps 1000 --nsamples 1000 --nchains 10 --parallel \
+    --output results/final_craton \
+    > logs/final_craton.log 2>&1 &
+
+python run_inversion.py \
+    --data data/synthetic/mobile_belt/MT_data_Z.dat \
+    --true_model data/synthetic/mobile_belt/true_model.json \
+    --nsteps 1000 --nsamples 1000 --nchains 10 --parallel \
+    --output results/final_mobile_belt \
+    > logs/final_mobile_belt.log 2>&1 &
+
+echo "Launched 3 inversions. PIDs: $(jobs -p)"
+wait
+echo "ALL 3 INVERSIONS COMPLETE"
+
+
+# Monitor progress (from a second terminal):
+#   tail -f logs/final_default_3layer.log logs/final_craton.log logs/final_mobile_belt.log
+
+
+# Post-processing and validation for all 3 (run after all inversions complete):
+for NAME in final_default_3layer final_craton final_mobile_belt; do
+    DATA_NAME=${NAME#final_}
+    python postprocess/chain_convergence.py --folder results/$NAME
+    python postprocess/process_chains.py    --folder results/$NAME
+    python postprocess/plot_posterior.py    --folder results/$NAME
+    python postprocess/plot_noise.py        --folder results/$NAME
+    python postprocess/validate_results.py  --folder results/$NAME \
+        --data data/synthetic/$DATA_NAME/MT_data_Z.dat
+done
+
+
+================================================================================
   PRODUCTION RUN (real Southern African MT data — slower, more accurate)
 ================================================================================
 # python run_inversion.py \
