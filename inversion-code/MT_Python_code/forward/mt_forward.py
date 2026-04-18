@@ -39,34 +39,27 @@ def mt1d_forward(resistivities, thicknesses, periods):
     thicknesses = np.asarray(thicknesses, dtype=np.float64)
     n = len(resistivities)
 
-    Z = np.zeros(len(omega), dtype=complex)
-
     # Extreme RJMCMC proposals can push the exp() argument into overflow /
     # underflow territory. The likelihood layer detects the resulting NaN/Inf
     # and rejects such proposals, so silence the warnings here rather than
     # letting Python's warnings machinery slow every forward call.
     with np.errstate(over="ignore", under="ignore", invalid="ignore", divide="ignore"):
-        for ip, w in enumerate(omega):
-            # Basement (half-space) impedance
-            Zn = np.sqrt(1j * w * mu * resistivities[-1])
-            imp = np.empty(n, dtype=complex)
-            imp[-1] = Zn
+        # Vectorised over all frequencies simultaneously: imp has shape (n_periods,)
+        # Basement (half-space) impedance for every frequency at once
+        imp = np.sqrt(1j * omega * mu * resistivities[-1])
 
-            # Recurse upward from layer n-2 to 0
-            for j in range(n - 2, -1, -1):
-                rho_j = resistivities[j]
-                h_j = thicknesses[j]
+        # Recurse upward from layer n-2 to 0; each iteration is a vectorised
+        # numpy operation across all frequencies — eliminates the inner loop.
+        for j in range(n - 2, -1, -1):
+            rho_j = resistivities[j]
+            h_j   = thicknesses[j]
+            dj = np.sqrt(1j * omega * mu / rho_j)
+            wj = dj * rho_j
+            ej = np.exp(-2.0 * h_j * dj)
+            rj = (wj - imp) / (wj + imp)
+            imp = wj * (1.0 - rj * ej) / (1.0 + rj * ej)
 
-                dj = np.sqrt(1j * w * mu / rho_j)   # induction parameter
-                wj = dj * rho_j                       # intrinsic impedance
-                ej = np.exp(-2.0 * h_j * dj)         # exponential decay factor
-
-                rj = (wj - imp[j + 1]) / (wj + imp[j + 1])  # reflection coeff
-                re = rj * ej
-                imp[j] = wj * (1.0 - re) / (1.0 + re)
-
-            Z[ip] = imp[0]
-
+        Z = imp
         absZ = np.abs(Z)
         appres = (absZ ** 2) / (mu * omega)
         phase = np.degrees(np.arctan2(Z.imag, Z.real))

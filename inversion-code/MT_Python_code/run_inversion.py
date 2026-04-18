@@ -113,6 +113,28 @@ def _write_acceptance_summary(results_all: list, cfg, folder: str,
 
 
 # ------------------------------------------------------------------ #
+# Temperature schedule helper
+# ------------------------------------------------------------------ #
+
+def _auto_temperatures(n: int) -> list:
+    """
+    Build a sensible PT temperature schedule for n chains.
+
+    Roughly 2/3 cold (T=1) + 1/3 hot with geometrically-spaced temperatures.
+    This avoids stuck chains when no explicit schedule is given.
+    """
+    if n <= 1:
+        return [1.0]
+    n_cold = max(1, n * 2 // 3)
+    n_hot  = n - n_cold
+    if n_hot == 0:
+        return [1.0] * n
+    max_T = max(2.0, 2.0 ** n_hot)   # e.g. 2 hot → max_T=4; 3 hot → 8
+    hot_temps = np.geomspace(2.0, max_T, n_hot).tolist()
+    return [1.0] * n_cold + hot_temps
+
+
+# ------------------------------------------------------------------ #
 # Worker function (must be at module level for multiprocessing)
 # ------------------------------------------------------------------ #
 
@@ -145,7 +167,8 @@ def main():
     parser.add_argument("--nsamples", type=int, default=None,
                         help="Samples per step (overrides config)")
     parser.add_argument("--nchains",     type=int, default=None,
-                        help="Number of cold chains (all at T=1). Ignored if --temperatures used.")
+                        help="Total number of chains. Automatically assigns parallel-tempering "
+                             "temperatures (~2/3 cold + 1/3 hot). Ignored if --temperatures used.")
     parser.add_argument("--temperatures", nargs="+", type=float, default=None,
                         help="Full temperature schedule, e.g. --temperatures 1 1 1.5 3 10  "
                              "Values=1 are cold chains, >1 are hot chains for parallel tempering.")
@@ -182,7 +205,8 @@ def main():
     if args.temperatures:
         cfg.temperature = args.temperatures        # full PT schedule provided
     elif args.nchains:
-        cfg.temperature = [1.0] * args.nchains     # all cold, no PT
+        cfg.temperature = _auto_temperatures(args.nchains)
+        print(f"Auto PT schedule ({args.nchains} chains): {cfg.temperature}")
     # Re-derive after any changes
     cfg._derive()
 
@@ -222,47 +246,68 @@ def main():
 
     t_start = time.time()
 
-    for is_ in range(cfg.nsteps):
-        # ---- Run all chains for one step ----
-        if args.parallel and cfg.nChains > 1:
-            import multiprocessing as mp
-            worker_args = [
-                (models[ic], likelihoods[ic], sigmas[ic], cfg, ic, is_)
-                for ic in range(cfg.nChains)
-            ]
-            with mp.Pool(processes=min(cfg.nChains, mp.cpu_count())) as pool:
-                results = pool.map(_worker, worker_args)
-            for ic, (samples, m, lf, s) in enumerate(results):
-                results_all[ic].append(samples)
-                models[ic] = m
-                likelihoods[ic] = lf
-                sigmas[ic] = s
-        else:
-            for ic in range(cfg.nChains):
-                samples, m, lf, s = run_chain_step(
-                    models[ic], likelihoods[ic], sigmas[ic], cfg, ic, is_
-                )
-                results_all[ic].append(samples)
-                models[ic] = m
-                likelihoods[ic] = lf
-                sigmas[ic] = s
-
-        # ---- Save chains periodically ----
-        save_chain(results_all, is_, cfg, swap_count, args.output,
-                   prefix=args.method)
-
-        # ---- Parallel tempering swap ----
-        if any(t > 1.0 for t in cfg.temperature):
-            likelihoods, models, sigmas, swap_count = swap_temperatures(
-                likelihoods, models, sigmas, cfg, is_, swap_count
+    def _run_step(is_):
+        """Run all chains for one step (sequential)."""
+        for ic in range(cfg.nChains):
+            samples, m, lf, s = run_chain_step(
+                models[ic], likelihoods[ic], sigmas[ic], cfg, ic, is_
             )
+            results_all[ic].append(samples)
+            models[ic] = m
+            likelihoods[ic] = lf
+            sigmas[ic] = s
 
-        elapsed = time.time() - t_start
-        pct = (is_ + 1) / cfg.nsteps * 100
-        eta = elapsed / (is_ + 1) * (cfg.nsteps - is_ - 1)
-        print(f"  Step {is_+1}/{cfg.nsteps} done "
-              f"({pct:.0f}%)  elapsed={elapsed/60:.1f} min  "
-              f"ETA={eta/60:.1f} min\n")
+    if args.parallel and cfg.nChains > 1:
+        import multiprocessing as mp
+        # Create pool once — avoids per-step spawn/teardown overhead
+        pool = mp.Pool(processes=min(cfg.nChains, mp.cpu_count()))
+    else:
+        pool = None
+
+    try:
+        for is_ in range(cfg.nsteps):
+            # ---- Run all chains for one step ----
+            if pool is not None:
+                worker_args = [
+                    (models[ic], likelihoods[ic], sigmas[ic], cfg, ic, is_)
+                    for ic in range(cfg.nChains)
+                ]
+                results = pool.map(_worker, worker_args)
+                for ic, (samples, m, lf, s) in enumerate(results):
+                    results_all[ic].append(samples)
+                    models[ic] = m
+                    likelihoods[ic] = lf
+                    sigmas[ic] = s
+            else:
+                for ic in range(cfg.nChains):
+                    samples, m, lf, s = run_chain_step(
+                        models[ic], likelihoods[ic], sigmas[ic], cfg, ic, is_
+                    )
+                    results_all[ic].append(samples)
+                    models[ic] = m
+                    likelihoods[ic] = lf
+                    sigmas[ic] = s
+
+            # ---- Save chains periodically ----
+            save_chain(results_all, is_, cfg, swap_count, args.output,
+                       prefix=args.method)
+
+            # ---- Parallel tempering swap ----
+            if any(t > 1.0 for t in cfg.temperature):
+                likelihoods, models, sigmas, swap_count = swap_temperatures(
+                    likelihoods, models, sigmas, cfg, is_, swap_count
+                )
+
+            elapsed = time.time() - t_start
+            pct = (is_ + 1) / cfg.nsteps * 100
+            eta = elapsed / (is_ + 1) * (cfg.nsteps - is_ - 1)
+            print(f"  Step {is_+1}/{cfg.nsteps} done "
+                  f"({pct:.0f}%)  elapsed={elapsed/60:.1f} min  "
+                  f"ETA={eta/60:.1f} min\n")
+    finally:
+        if pool is not None:
+            pool.close()
+            pool.join()
 
     total_elapsed = time.time() - t_start
     print("MCMC Procedure Ends")

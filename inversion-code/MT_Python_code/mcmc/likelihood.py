@@ -203,7 +203,10 @@ def estimate_like_norm(unc_proposed: dict, unc_current: dict,
 
     if method in ("MT", "MT_DC"):
         if dtype == "Z":
-            temp = np.log(2.0 * unc_current["MT_Z"] / unc_proposed["MT_Z"])
+            # Complex Gaussian: each frequency has 2 real DOF (Re + Im),
+            # so the log-partition ratio is 2 × log(unc_curr / unc_new).
+            # The factor of 2 must be OUTSIDE the log, not inside.
+            temp = 2.0 * np.log(unc_current["MT_Z"] / unc_proposed["MT_Z"])
             norm += float(np.sum(temp))
             reg_term = -0.5 * ((sigma[0] - 1.0) / 0.2) ** 2
         elif dtype == "APP":

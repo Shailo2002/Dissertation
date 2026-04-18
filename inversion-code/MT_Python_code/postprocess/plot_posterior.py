@@ -103,13 +103,17 @@ def plot_posterior(
 
     # ---- Panel 1: Posterior PDF ----
     ax1 = axes[0]
-    pdf_plot = post_pdf.copy()
-    pdf_plot[pdf_plot <= 0] = np.nan
+    pdf_log = np.log10(post_pdf + 1e-10)   # unsampled cells → log10(1e-10)
+    # Colour range driven by non-zero cells; unsampled cells clip to vmin
+    sampled = pdf_log[post_pdf > 0]
+    vmax = float(sampled.max()) if len(sampled) > 0 else 0.0
+    vmin = vmax - 2.5   # show 2.5 decades so contrast is preserved
 
     mesh = ax1.pcolormesh(
         rho_plot, z_plot,
-        np.log10(pdf_plot + 1e-10),
+        pdf_log,
         shading="auto", cmap="viridis",
+        vmin=vmin, vmax=vmax,
     )
     # 5th and 95th percentile contours
     ax1.step(p5,  z_plot, "r-",  linewidth=1.5, where="mid", label="5th/95th %ile")

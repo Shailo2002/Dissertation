@@ -80,9 +80,11 @@ class Config:
     nsteps: int = 20
     nsamples: int = 1000
 
-    # Proposal type probabilities (cumulative)
-    # [birth, death, move, change_rho, (rest = change_noise)]
-    proposal: List[float] = field(default_factory=lambda: [0.10, 0.50, 0.66, 1.00])
+    # Proposal type probabilities (cumulative thresholds for u ~ Uniform[0,1)):
+    #   birth=10%, death=10%, move=16%, change_rho=52%, change_noise=12%
+    # Last value MUST be < 1.0 so that change_noise (ptype 5) is reachable.
+    # birth and death are balanced (equal %) to avoid layer-count bias.
+    proposal: List[float] = field(default_factory=lambda: [0.10, 0.20, 0.36, 0.88])
 
     # Kernel type: 0 = Gaussian (for birth/death prob), 1 = prior
     kernel: int = 1

@@ -65,6 +65,16 @@ def acceptance_rate_summary(folder: str, prefix: str = "MT"):
     sep2 = "-" * 50
     sep3 = "-" * 40
     now  = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    nsteps = cfg.get("nsteps", "?")
+
+    # Preserve the original total-time line written by run_inversion.py
+    total_time_str = "n/a (run chain_convergence.py after run_inversion.py to see)"
+    out_path = os.path.join(folder, "Acceptance_Rate_Summary.txt")
+    if os.path.exists(out_path):
+        for line in open(out_path):
+            if line.strip().startswith("Total time:"):
+                total_time_str = line.strip()[len("Total time:"):].strip()
+                break
 
     lines = [
         "",
@@ -72,7 +82,8 @@ def acceptance_rate_summary(folder: str, prefix: str = "MT"):
         "     ACCEPTANCE RATE SUMMARY (across all chains & steps)",
         sep,
         f"Generated : {now}",
-        f"Chains    : {nChains}",
+        f"Chains    : {nChains}  |  Steps : {nsteps}",
+        f"Total time: {total_time_str}",
         "",
         f"{'Type':<12}  {'Min(%)':>8}  {'Max(%)':>8}  {'Mean(%)':>8}  {'Std(%)':>8}",
         sep2,

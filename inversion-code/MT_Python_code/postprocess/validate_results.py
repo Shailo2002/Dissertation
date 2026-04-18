@@ -127,10 +127,12 @@ def _plot_model_comparison(
         rho_true_ohm = np.array(true_rho,  dtype=float)
         rho_true_log = np.log10(rho_true_ohm)
 
-        # Step arrays for plotting (extend last layer to z_max)
+        # Step arrays for plotting (extend last layer to z_max).
+        # where='pre': constant rho going DOWN through each layer, then
+        # jumps horizontally at the interface — correct for a depth profile.
         z_step   = np.append(z_true_m, z_max)
         rho_step = np.append(rho_true_log, rho_true_log[-1])
-        ax.step(rho_step, z_step / 1000.0, where="post",
+        ax.step(rho_step, z_step / 1000.0, where="pre",
                 color="blue", linewidth=2, label="True model")
 
         # RMS: interpolate true model onto inversion depth grid
@@ -315,7 +317,8 @@ def validate(
     if true_depths is not None and true_rho is not None:
         z_t = np.array(true_depths, dtype=float)
         r_t = np.array(true_rho,   dtype=float)
-        h_t = np.diff(np.append(z_t, z_t[-1] * 1.5))
+        # Use the inversion's z_max as basement so the forward matches the data
+        h_t = np.diff(np.append(z_t, max_z_metres))
         _, ap_true, _ = mt1d_forward(r_t, h_t, periods)
         ax1.loglog(periods, ap_true, "--k", linewidth=2, label="True (noise-free)")
     ax1.set_xlabel("Period (s)")
