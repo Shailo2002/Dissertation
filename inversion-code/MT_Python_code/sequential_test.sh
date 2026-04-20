@@ -1,25 +1,26 @@
 #!/usr/bin/env bash
-# Sequential science-quality run: all 3 synthetic datasets at 200 steps x
-# 5 chains, end-to-end (inversion -> chain_convergence -> process_chains ->
-# plot_posterior -> plot_noise -> validate_results).  Runs each dataset
-# fully before starting the next, so only 5 chain workers are active at
-# any time (safe on 8-core PCs).
+# Production synthetic run: all 3 synthetic datasets at 1000 steps x
+# 10 chains (6 cold T=1 + 4 hot T=2,4,8,16 for parallel tempering).
+# Runs each dataset fully before starting the next.
 #
 # Usage (from MT_Python_code/):
-#     bash sequential_test.sh
+#     bash sequential_test.sh            # 1000 steps (default)
+#     bash sequential_test.sh 200        # custom steps, e.g. quick check
 
 set -e
+
+NSTEPS=${1:-1000}
+NSAMPLES=1000
+TEMPERATURES="1 1 1 1 1 1 2 4 8 16"   # 6 cold + 4 hot
 
 mkdir -p logs results
 
 for NAME in default_3layer craton mobile_belt; do
-    RESULTS="results/test_${NAME}_200steps"
+    RESULTS="results/test_${NAME}_${NSTEPS}steps"
     DATA="data/synthetic/${NAME}/MT_data_Z.dat"
     TRUE="data/synthetic/${NAME}/true_model.json"
-    LOG="logs/test_${NAME}_200steps.log"
+    LOG="logs/test_${NAME}_${NSTEPS}steps.log"
 
-    # Only pass --true_model if the file exists (older synthetic datasets
-    # did not generate it).
     TRUE_MODEL_ARGS=""
     if [ -f "$TRUE" ]; then
         TRUE_MODEL_ARGS="--true_model $TRUE"
@@ -27,10 +28,16 @@ for NAME in default_3layer craton mobile_belt; do
 
     echo ""
     echo "============================================================"
-    echo "  [$(date '+%H:%M:%S')] START: $NAME"
+    echo "  [$(date '+%H:%M:%S')] START: $NAME  (nsteps=$NSTEPS)"
+    echo "  Temperatures: $TEMPERATURES"
     echo "============================================================"
 
-    python run_inversion.py --data "$DATA" $TRUE_MODEL_ARGS --nsteps 200 --nsamples 1000 --nchains 5 --parallel --output "$RESULTS" 2>&1 | tee "$LOG"
+    python run_inversion.py \
+        --data "$DATA" $TRUE_MODEL_ARGS \
+        --nsteps "$NSTEPS" --nsamples "$NSAMPLES" \
+        --temperatures $TEMPERATURES \
+        --parallel \
+        --output "$RESULTS" 2>&1 | tee "$LOG"
 
     echo ""
     echo "  [$(date '+%H:%M:%S')] POSTPROCESS: $NAME"
@@ -49,5 +56,5 @@ done
 
 echo ""
 echo "============================================================"
-echo "  SEQUENTIAL TEST COMPLETE — all 3 datasets, 200 steps each"
+echo "  SEQUENTIAL TEST COMPLETE — all 3 datasets, ${NSTEPS} steps each"
 echo "============================================================"

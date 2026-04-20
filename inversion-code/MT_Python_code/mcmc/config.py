@@ -100,10 +100,10 @@ class Config:
     sigma_loc_z_delayed: List[float] = field(default_factory=list)
 
     # Noise hyperparameter bounds [min, max]
-    sigma_Z: List[float] = field(default_factory=lambda: [1.0, 5.0])
-    sigma_app_res: List[float] = field(default_factory=lambda: [0.8, 5.0])
-    sigma_phase: List[float] = field(default_factory=lambda: [0.8, 5.0])
-    sigma_noise: float = 0.01   # step size for noise proposal
+    sigma_Z: List[float] = field(default_factory=lambda: [0.5, 20.0])
+    sigma_app_res: List[float] = field(default_factory=lambda: [0.5, 20.0])
+    sigma_phase: List[float] = field(default_factory=lambda: [0.5, 20.0])
+    sigma_noise: float = 0.05   # step size for noise proposal (larger → ~30-60% acceptance)
 
     # ------------------------------------------------------------------ #
     # Inversion mode

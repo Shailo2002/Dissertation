@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # Real SAMTEX data inversion — all stations, sequential.
 # Each station runs fully (inversion -> postprocess -> validate)
-# before the next one starts.  Only 5 chain workers at a time
-# (safe on 8-core PC).
+# before the next one starts.  10 chains (6 cold + 4 hot PT).
 #
 # Usage (from MT_Python_code/):
-#     bash real_data_run.sh              # 200 steps (default)
+#     bash real_data_run.sh              # 1000 steps (default)
 #     bash real_data_run.sh 50           # custom steps, e.g. quick test
-#     bash real_data_run.sh 1000         # full production run
 
 set -e
 
-NSTEPS=${1:-200}
+NSTEPS=${1:-1000}
+NSAMPLES=1000
+TEMPERATURES="1 1 1 1 1 1 2 4 8 16"   # 6 cold + 4 hot
 
 mkdir -p logs results
 
@@ -22,10 +22,16 @@ for DATAFILE in data/real/SAMTEX.*.dat; do
 
     echo ""
     echo "============================================================"
-    echo "  [$(date '+%H:%M:%S')] START: $STATION"
+    echo "  [$(date '+%H:%M:%S')] START: $STATION  (nsteps=$NSTEPS)"
+    echo "  Temperatures: $TEMPERATURES"
     echo "============================================================"
 
-    python run_inversion.py --data "$DATAFILE" --nsteps "$NSTEPS" --nsamples 1000 --nchains 5 --parallel --output "$RESULTS" 2>&1 | tee "$LOG"
+    python run_inversion.py \
+        --data "$DATAFILE" \
+        --nsteps "$NSTEPS" --nsamples "$NSAMPLES" \
+        --temperatures $TEMPERATURES \
+        --parallel \
+        --output "$RESULTS" 2>&1 | tee "$LOG"
 
     echo ""
     echo "  [$(date '+%H:%M:%S')] POSTPROCESS: $STATION"
@@ -44,5 +50,5 @@ done
 
 echo ""
 echo "============================================================"
-echo "  ALL STATIONS COMPLETE  (nsteps=$NSTEPS)"
+echo "  ALL STATIONS COMPLETE  (nsteps=$NSTEPS, 10 chains with PT)"
 echo "============================================================"
