@@ -1,36 +1,60 @@
-# Jupyter Notebook Checkpoints
-.ipynb_checkpoints/
-
-# Python compiled files
+# ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+dist/
+build/
 
-# Environment files
+# ── Jupyter ────────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+
+# ── Virtual environments ───────────────────────────────────────────────────────
 .conda/
 env/
 venv/
-*.egg-info/
-.env
+.venv/
 
-# Operating System specific files
+# ── OS junk ───────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# Logs and temporary files
+# ── Logs & temp ───────────────────────────────────────────────────────────────
 *.log
 *.tmp
 temp/
 
-# Data files (if not intended for version control)
-# You might want to be more specific here, e.g.,
-# data/
-# *.csv
-# *.hdf5
+# ── Inversion OUTPUT (large, reproducible — do not commit) ────────────────────
+inversion-code/MT_Python_code/results/
+inversion-code/MT_Python_code/logs/
 
-# Anaconda/Miniconda specific files (if you don't want to track environment.yml)
-# If you are managing your environment with environment.yml, you might want to keep it.
-# If not, you might want to ignore these:
-# conda-meta/
-# pkgs/
+# ── Binary / large data formats ───────────────────────────────────────────────
+*.npz
+*.npy
+*.mat
+*.nc
+*.hdf5
+*.h5
 
-Jiff_ModEM_AP3DMT
+# ── GIS / shapefile sidecar files (keep .shp/.dbf if you need them) ──────────
+*.shx
+*.prj
+*.cpg
+*.qpj
+
+# ── Images (generated outputs — commit only key figures explicitly if needed) ──
+*.tif
+*.tiff
+
+# ── Third-party model packages (large, not your code) ─────────────────────────
+Jiff_ModEM_AP3DMT/
+SA2022ModelsAndData/
+temp-results
+
+# ── Secrets / environment ─────────────────────────────────────────────────────
+.env
+*.pem
+*.key

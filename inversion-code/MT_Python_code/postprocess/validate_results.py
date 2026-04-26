@@ -41,6 +41,75 @@ from mcmc.config import get_default_config
 
 
 # ------------------------------------------------------------------ #
+# Professor's 3D model helpers
+# (mirrors ReadModel.m + coordinate transform in A1_compare_models_5_slice.m)
+# ------------------------------------------------------------------ #
+
+_PROF_REF_LAT  = -24.79278
+_PROF_REF_LONG =  22.41878
+
+
+def _read_prof_model(filepath):
+    """Read Fine_model_10km_HS.dat → (log10_rho, x_m, y_m, z_m)."""
+    with open(filepath, "r") as fid:
+        fid.readline()                          # comment
+        header = fid.readline().strip()
+        parts  = header.split()
+        nx, ny, nz = int(parts[0]), int(parts[1]), int(parts[2])
+        use_loge   = "LOGE" in header.upper()
+        tokens = []
+        for line in fid:
+            tokens.extend(line.split())
+
+    it = iter(tokens)
+    def _n(n): return np.array([float(next(it)) for _ in range(n)])
+
+    dx, dy, dz = _n(nx), _n(ny), _n(nz)
+
+    raw = np.zeros((nx, ny, nz))
+    for iz in range(nz):
+        for iy in range(ny):
+            for ix in range(nx - 1, -1, -1):
+                raw[ix, iy, iz] = float(next(it))
+
+    origin = _n(3)
+    x = np.concatenate([[origin[0]], origin[0] + np.cumsum(dx)])
+    y = np.concatenate([[origin[1]], origin[1] + np.cumsum(dy)])
+    z = np.concatenate([[origin[2]], origin[2] + np.cumsum(dz)])
+
+    rho = np.zeros((nx+1, ny+1, nz+1))
+    rho[:nx, :ny, :nz] = raw
+    rho[nx,  :,   :  ] = rho[nx-1, :, :]
+    rho[:,   ny,  :  ] = rho[:, ny-1, :]
+    rho[:,   :,   nz ] = rho[:, :,  nz-1]
+
+    if use_loge:
+        sigma = np.exp(rho)
+        sigma[sigma > 1e6] = np.nan
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.log10(1.0 / sigma), x, y, z
+    else:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.log10(rho), x, y, z   # file stores resistivity directly
+
+
+def _extract_1d_prof(log10rho, x, y, z, lat, lon):
+    """Return (log10_rho_1d, depth_km) at the grid column nearest to (lat, lon)."""
+    x_geo = x / 1000.0 / 111.0 + _PROF_REF_LAT
+    y_geo = y / 1000.0 / (111.0 * np.cos(np.radians(_PROF_REF_LAT))) + _PROF_REF_LONG
+    z_km  = z / 1000.0
+
+    ix = np.where(x_geo >= lat)[0]
+    iy = np.where(y_geo >= lon)[0]
+    if ix.size == 0 or iy.size == 0:
+        raise ValueError(
+            f"lat={lat}, lon={lon} outside model extent "
+            f"[{x_geo.min():.2f}–{x_geo.max():.2f}, {y_geo.min():.2f}–{y_geo.max():.2f}]"
+        )
+    return log10rho[ix[0], iy[0], :], z_km
+
+
+# ------------------------------------------------------------------ #
 # Helpers
 # ------------------------------------------------------------------ #
 
@@ -90,6 +159,9 @@ def _plot_model_comparison(
     prefix: str = "MT",
     true_depths: list = None,
     true_rho: list = None,
+    lat: float = None,
+    lon: float = None,
+    prof_model: str = None,
     output: str = None,
 ) -> float:
     """
@@ -123,19 +195,15 @@ def _plot_model_comparison(
 
     # ---- True model (synthetic only) ----
     if true_depths is not None and true_rho is not None:
-        z_true_m    = np.array(true_depths, dtype=float)
-        rho_true_ohm = np.array(true_rho,  dtype=float)
+        z_true_m     = np.array(true_depths, dtype=float)
+        rho_true_ohm = np.array(true_rho,   dtype=float)
         rho_true_log = np.log10(rho_true_ohm)
 
-        # Step arrays for plotting (extend last layer to z_max).
-        # where='pre': constant rho going DOWN through each layer, then
-        # jumps horizontally at the interface — correct for a depth profile.
         z_step   = np.append(z_true_m, z_max)
         rho_step = np.append(rho_true_log, rho_true_log[-1])
         ax.step(rho_step, z_step / 1000.0, where="pre",
                 color="blue", linewidth=2, label="True model")
 
-        # RMS: interpolate true model onto inversion depth grid
         interp_true = interp1d(z_step, rho_step, kind="previous",
                                bounds_error=False, fill_value="extrapolate")
         rho_true_interp = interp_true(z_plot[mask])
@@ -143,14 +211,55 @@ def _plot_model_comparison(
         rms = float(np.sqrt(np.mean(misfit ** 2)))
 
         print(f"\n  Model RMS (log10 space) : {rms:.3f}")
-        ax.text(0.05, 0.04, f"RMS = {rms:.3f}",
-                transform=ax.transAxes, fontsize=10,
+        ax.text(0.05, 0.95, f"RMS = {rms:.3f}",
+                transform=ax.transAxes, fontsize=10, va="top",
                 bbox=dict(boxstyle="round", facecolor="white", alpha=0.8))
 
-    ax.invert_yaxis()
-    ax.set_xlabel(r"log$_{10}$(Resistivity) (ohm-m)", fontsize=11)
+        title = "Synthetic Test: True vs Inversion"
+
+    # ---- Professor's 3D model (real data) ----
+    elif prof_model is not None and lat is not None and lon is not None:
+        if not os.path.exists(prof_model):
+            print(f"  ⚠  Professor's model not found: {prof_model}")
+            title = "1D Inversion Result"
+        else:
+            print(f"  Loading professor's 3D model for comparison …")
+            try:
+                log10rho_3d, mx, my, mz = _read_prof_model(prof_model)
+                rho_3d_1d, z_3d_km = _extract_1d_prof(log10rho_3d, mx, my, mz, lat, lon)
+
+                # plot 3D model profile, skip z=0 surface point
+                mask_3d = (z_3d_km > 0) & (z_3d_km <= z_max / 1000.0)
+                ax.plot(rho_3d_1d[mask_3d], z_3d_km[mask_3d],
+                        "--k", linewidth=2, label="3D model (Prof.)")
+
+                # RMS between inversion mean and 3D model (interpolated)
+                valid_z = z_3d_km[z_3d_km > 0]
+                valid_r = rho_3d_1d[z_3d_km > 0]
+                interp_3d = interp1d(valid_z, valid_r,
+                                     bounds_error=False, fill_value=np.nan)
+                rho_3d_at_inv = interp_3d(depth_km)
+                valid = ~np.isnan(rho_3d_at_inv)
+                if valid.sum() > 0:
+                    rms = float(np.sqrt(np.mean((pmean[mask][valid] - rho_3d_at_inv[valid]) ** 2)))
+                    print(f"  Model RMS vs 3D model (log10 space) : {rms:.3f}")
+                    ax.text(0.05, 0.95, f"RMS vs 3D = {rms:.3f}",
+                            transform=ax.transAxes, fontsize=10, va="top",
+                            bbox=dict(boxstyle="round", facecolor="white", alpha=0.8))
+
+                title = f"1D Inversion vs 3D Reference Model\nlat={lat:.4f}°, lon={lon:.4f}°"
+                print(f"  3D model comparison added to plot.")
+            except Exception as exc:
+                print(f"  ⚠  Could not extract 3D model profile: {exc}")
+                title = "1D Inversion Result"
+    else:
+        title = "1D Inversion Result (Real Data)"
+
+    ax.set_xlim(0, 5)
+    ax.set_ylim(z_max / 1000.0, 0)   # 0 km at top, depth increases downward
+    ax.set_xlabel(r"log$_{10}$(Resistivity) [Ω·m]", fontsize=11)
     ax.set_ylabel("Depth (km)", fontsize=11)
-    ax.set_title("Synthetic Test: True vs Inversion", fontsize=12)
+    ax.set_title(title, fontsize=12)
     ax.legend(fontsize=9, loc="upper right")
     ax.grid(True, alpha=0.4)
     plt.tight_layout()
@@ -173,6 +282,9 @@ def validate(
     prefix: str = "MT",
     true_depths: list = None,
     true_rho: list = None,
+    lat: float = None,
+    lon: float = None,
+    prof_model: str = None,
     n_pred_samples: int = 200,
     output: str = None,
 ):
@@ -447,6 +559,9 @@ def validate(
         prefix=prefix,
         true_depths=true_depths,
         true_rho=true_rho,
+        lat=lat,
+        lon=lon,
+        prof_model=prof_model,
     )
 
 
@@ -462,6 +577,12 @@ def main():
                         help="True layer resistivities in ohm-m (synthetic only)")
     parser.add_argument("--nsamples",    type=int, default=200,
                         help="Number of posterior samples used for prediction (default 200)")
+    parser.add_argument("--lat",         type=float, default=None,
+                        help="Station latitude  — enables professor's 3D model comparison")
+    parser.add_argument("--lon",         type=float, default=None,
+                        help="Station longitude — enables professor's 3D model comparison")
+    parser.add_argument("--prof_model",  default=None,
+                        help="Path to Fine_model_10km_HS.dat (professor's 3D model)")
     parser.add_argument("--output",      default=None)
     args = parser.parse_args()
 
@@ -471,6 +592,9 @@ def main():
         prefix=args.prefix,
         true_depths=args.true_depths,
         true_rho=args.true_rho,
+        lat=args.lat,
+        lon=args.lon,
+        prof_model=args.prof_model,
         n_pred_samples=args.nsamples,
         output=args.output,
     )

@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
-# Real SAMTEX data inversion — all stations, sequential.
-# Each station runs fully (inversion -> postprocess -> validate)
-# before the next one starts.  10 chains (6 cold + 4 hot PT).
-#
-# Usage (from MT_Python_code/):
-#     bash real_data_run.sh              # 1000 steps (default)
-#     bash real_data_run.sh 50           # custom steps, e.g. quick test
+# Batch 3 of 3 — 7 stations: oka008 rtz401 rtz417 san006 san008 san011 zim128
+# Run from MT_Python_code/:
+#     bash batch3_run.sh          # 1000 steps (default)
+#     bash batch3_run.sh 500      # custom steps
 
 set -e
 
@@ -13,16 +10,24 @@ NSTEPS=${1:-1000}
 NSAMPLES=1000
 TEMPERATURES="1 1 1 1 1 1 2 4 8 16"   # 6 cold + 4 hot
 
-# Path to professor's 3D reference model (used in model comparison plot)
 PROF_MODEL="../../Jiff_ModEM_AP3DMT/Fine_model_10km_HS.dat"
-# Station lat/lon catalogue (generated_csv has all SAMTEX stations with coordinates)
 STATION_CSV="../../1d_data_checkup/output/csv/generated_csv/selected_24_stations.csv"
 
 mkdir -p logs results
 
-for DATAFILE in data/real/SAMTEX.*.dat; do
-    STATION=$(basename "$DATAFILE" .dat)          # e.g. SAMTEX.bot228.2005
-    CODE=$(echo "$STATION" | cut -d'.' -f2)      # e.g. bot228
+DATAFILES=(
+    "data/real/SAMTEX.oka008.2006.dat"
+    "data/real/SAMTEX.rtz401.2005.dat"
+    "data/real/SAMTEX.rtz417.2005.dat"
+    "data/real/SAMTEX.san006.2008.dat"
+    "data/real/SAMTEX.san008.2008.dat"
+    "data/real/SAMTEX.san011.2008.dat"
+    "data/real/SAMTEX.zim128.2005.dat"
+)
+
+for DATAFILE in "${DATAFILES[@]}"; do
+    STATION=$(basename "$DATAFILE" .dat)
+    CODE=$(echo "$STATION" | cut -d'.' -f2)
     RESULTS="results/real_${CODE}_${NSTEPS}steps"
     LOG="logs/real_${CODE}_${NSTEPS}steps.log"
 
@@ -49,12 +54,11 @@ for DATAFILE in data/real/SAMTEX.*.dat; do
     echo ""
     echo "  [$(date '+%H:%M:%S')] VALIDATE: $STATION"
 
-    # Look up station lat/lon from the stations CSV by matching the SAMTEX site name
     LATLON=""
     if [ -f "$STATION_CSV" ]; then
         LATLON=$(python -c "
 import csv, sys
-station = '${STATION}'   # e.g. SAMTEX.bot228.2005
+station = '${STATION}'
 try:
     with open('${STATION_CSV}') as f:
         for row in csv.DictReader(f):
@@ -75,7 +79,7 @@ except Exception:
             --lat "$LAT" --lon "$LON" --prof_model "$PROF_MODEL" \
             2>&1 | tee -a "$LOG"
     else
-        echo "  Station $CODE: lat/lon not found in professor's data — skipping 3D comparison"
+        echo "  Station $CODE: lat/lon not found — skipping 3D comparison"
         python postprocess/validate_results.py --folder "$RESULTS" --data "$DATAFILE" \
             2>&1 | tee -a "$LOG"
     fi
@@ -86,5 +90,6 @@ done
 
 echo ""
 echo "============================================================"
-echo "  ALL STATIONS COMPLETE  (nsteps=$NSTEPS, 10 chains with PT)"
+echo "  BATCH 3 COMPLETE  (nsteps=$NSTEPS)"
+echo "  Stations: oka008 rtz401 rtz417 san006 san008 san011 zim128"
 echo "============================================================"
