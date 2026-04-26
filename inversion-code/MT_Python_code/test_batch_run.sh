@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Batch 2 of 3 — 7 stations: kap010 kap067 kim432 kim435 mak002 mof102 mof107
+# Quick test — 3 stations, 50 steps (just to verify the pipeline works).
 # Run from MT_Python_code/:
-#     bash batch2_run.sh          # 1000 steps (default)
-#     bash batch2_run.sh 500      # custom steps
+#     bash test_batch_run.sh        # 50 steps (default, ~5 min per station)
+#     bash test_batch_run.sh 100    # custom steps
 
 set -e
 
-NSTEPS=${1:-1000}
+NSTEPS=${1:-50}
 NSAMPLES=1000
-TEMPERATURES="1 1 1 1 1 1 2 4 8 16"   # 6 cold + 4 hot
+TEMPERATURES="1 1 1 1 1 1 2 4 8 16"
 
 PROF_MODEL="../../Jiff_ModEM_AP3DMT/Fine_model_10km_HS.dat"
 STATION_CSV="../../1d_data_checkup/output/csv/generated_csv/selected_24_stations.csv"
@@ -20,12 +20,8 @@ mkdir -p logs results
 
 DATAFILES=(
     "data/real/SAMTEX.kap010.2003.dat"
-    "data/real/SAMTEX.kap067.2003.dat"
-    "data/real/SAMTEX.kim432.2004.dat"
-    "data/real/SAMTEX.kim435.2004.dat"
-    "data/real/SAMTEX.mak002.2006.dat"
     "data/real/SAMTEX.mof102.2005.dat"
-    "data/real/SAMTEX.mof107.2005.dat"
+    "data/real/SAMTEX.zim128.2005.dat"
 )
 
 for DATAFILE in "${DATAFILES[@]}"; do
@@ -93,6 +89,6 @@ done
 
 echo ""
 echo "============================================================"
-echo "  BATCH 2 COMPLETE  (nsteps=$NSTEPS)"
-echo "  Stations: kap010 kap067 kim432 kim435 mak002 mof102 mof107"
+echo "  TEST COMPLETE  (nsteps=$NSTEPS)"
+echo "  Stations: kap010 mof102 zim128"
 echo "============================================================"

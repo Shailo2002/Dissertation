@@ -13,6 +13,9 @@ TEMPERATURES="1 1 1 1 1 1 2 4 8 16"   # 6 cold + 4 hot
 PROF_MODEL="../../Jiff_ModEM_AP3DMT/Fine_model_10km_HS.dat"
 STATION_CSV="../../1d_data_checkup/output/csv/generated_csv/selected_24_stations.csv"
 
+# Force Python to flush output immediately (fixes silent tee)
+export PYTHONUNBUFFERED=1
+
 mkdir -p logs results
 
 DATAFILES=(
@@ -37,7 +40,7 @@ for DATAFILE in "${DATAFILES[@]}"; do
     echo "  Temperatures: $TEMPERATURES"
     echo "============================================================"
 
-    python run_inversion.py \
+    python -u run_inversion.py \
         --data "$DATAFILE" \
         --nsteps "$NSTEPS" --nsamples "$NSAMPLES" \
         --temperatures $TEMPERATURES \
@@ -46,17 +49,17 @@ for DATAFILE in "${DATAFILES[@]}"; do
 
     echo ""
     echo "  [$(date '+%H:%M:%S')] POSTPROCESS: $STATION"
-    python postprocess/chain_convergence.py --folder "$RESULTS" 2>&1 | tee -a "$LOG"
-    python postprocess/process_chains.py    --folder "$RESULTS" 2>&1 | tee -a "$LOG"
-    python postprocess/plot_posterior.py    --folder "$RESULTS" 2>&1 | tee -a "$LOG"
-    python postprocess/plot_noise.py        --folder "$RESULTS" 2>&1 | tee -a "$LOG"
+    python -u postprocess/chain_convergence.py --folder "$RESULTS" 2>&1 | tee -a "$LOG"
+    python -u postprocess/process_chains.py    --folder "$RESULTS" 2>&1 | tee -a "$LOG"
+    python -u postprocess/plot_posterior.py    --folder "$RESULTS" 2>&1 | tee -a "$LOG"
+    python -u postprocess/plot_noise.py        --folder "$RESULTS" 2>&1 | tee -a "$LOG"
 
     echo ""
     echo "  [$(date '+%H:%M:%S')] VALIDATE: $STATION"
 
     LATLON=""
     if [ -f "$STATION_CSV" ]; then
-        LATLON=$(python -c "
+        LATLON=$(python -u -c "
 import csv, sys
 station = '${STATION}'
 try:
@@ -74,13 +77,13 @@ except Exception:
         LAT=$(echo "$LATLON" | awk '{print $1}')
         LON=$(echo "$LATLON" | awk '{print $2}')
         echo "  Station $CODE: lat=$LAT lon=$LON → using professor's 3D model"
-        python postprocess/validate_results.py \
+        python -u postprocess/validate_results.py \
             --folder "$RESULTS" --data "$DATAFILE" \
             --lat "$LAT" --lon "$LON" --prof_model "$PROF_MODEL" \
             2>&1 | tee -a "$LOG"
     else
         echo "  Station $CODE: lat/lon not found — skipping 3D comparison"
-        python postprocess/validate_results.py --folder "$RESULTS" --data "$DATAFILE" \
+        python -u postprocess/validate_results.py --folder "$RESULTS" --data "$DATAFILE" \
             2>&1 | tee -a "$LOG"
     fi
 
