@@ -6,6 +6,9 @@
 
 set -e
 
+# Ctrl+C kills the entire process group (Python workers included)
+trap 'echo ""; echo "Interrupted — killing all processes..."; kill -- -$$ 2>/dev/null; exit 130' INT TERM
+
 NSTEPS=${1:-1000}
 NSAMPLES=1000
 TEMPERATURES="1 1 1 1 1 1 2 4 8 16"   # 6 cold + 4 hot
